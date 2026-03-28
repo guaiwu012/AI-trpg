@@ -1,8 +1,17 @@
 export type Role = "detective" | "hacker" | "priest";
-
 export type Skill = "observation" | "persuasion" | "willpower";
 
-export type SceneId = "gate" | "hallway" | "archive" | "basement";
+export type ScenarioId = "basement_case" | "infirmary_case";
+
+export type SceneId =
+  | "gate"
+  | "hallway"
+  | "archive"
+  | "basement"
+  | "courtyard"
+  | "clinic_hall"
+  | "infirmary"
+  | "quarantine_room";
 
 export type MessageRole = "system" | "narrator" | "npc" | "player";
 
@@ -31,9 +40,23 @@ export type Character = {
   inventory: string[];
 };
 
+export type SummaryOutcome =
+  | "extracted"
+  | "truth_found"
+  | "overwhelmed"
+  | "unfinished";
+
+export type SessionSummary = {
+  title: string;
+  outcome: SummaryOutcome;
+  storySummary: string;
+  keyFindings: string[];
+};
+
 export type GameState = {
   sessionId: string;
   world: string;
+  scenario: ScenarioId;
   currentScene: SceneId;
   character: Character;
   flags: Record<string, boolean>;
@@ -50,11 +73,4 @@ export type ActionCheck = {
   requiresRoll: boolean;
   skill?: Skill;
   reason?: string;
-};
-
-export type SessionSummary = {
-  title: string;
-  outcome: string;
-  storySummary: string;
-  keyFindings: string[];
 };
