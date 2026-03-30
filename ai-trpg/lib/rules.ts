@@ -7,134 +7,53 @@ import {
 } from "@/types/game";
 import { rollD20 } from "./dice";
 
-const skillKeywords: Record<"observation" | "persuasion" | "willpower", string[]> = {
+type SkillName = "observation" | "persuasion" | "willpower";
+
+const skillKeywords: Record<SkillName, string[]> = {
   observation: [
-    "look",
-    "investigate",
-    "inspect",
-    "search",
-    "observe",
-    "check",
-    "listen",
-    "read",
-    "scan",
-    "观察",
-    "检查",
-    "调查",
-    "搜查",
-    "寻找",
-    "查看",
-    "倾听",
-    "阅读",
+    "look","investigate","inspect","search","observe","check","listen","read","scan","examine","study","follow","trace","find","take a closer look",
+    "观察","检查","调查","搜查","寻找","查看","倾听","阅读","找","翻","看一看","看看",
   ],
   persuasion: [
-    "ask",
-    "talk",
-    "speak",
-    "persuade",
-    "convince",
-    "call",
-    "shout",
-    "询问",
-    "搭话",
-    "说服",
-    "交涉",
-    "呼喊",
-    "交谈",
+    "ask","talk","speak","persuade","convince","call","shout","question","negotiate","yell",
+    "询问","搭话","说服","交涉","呼喊","交谈","问","喊","叫",
   ],
   willpower: [
-    "resist",
-    "endure",
-    "pray",
-    "stay calm",
-    "push through",
-    "steady",
-    "抵抗",
-    "坚持",
-    "祈祷",
-    "冷静",
-    "硬撑",
-    "镇定",
+    "resist","endure","pray","stay calm","push through","steady","force myself","hold on","keep going","resilience",
+    "抵抗","坚持","祈祷","冷静","硬撑","镇定","撑住","继续",
   ],
 };
 
-const hardPushKeywords = [
-  "push through",
-  "force it",
-  "force open",
-  "take the hit",
-  "through the pain",
-  "ignore the pain",
-  "ignore the wound",
-  "with my bare hands",
-  "hard push",
-  "硬撑",
-  "强行",
-  "拼着受伤",
-  "冒着受伤",
-  "忍痛",
-  "顶着疼",
-  "徒手",
+const moveKeywords = [
+  "open","enter","go","move","follow","continue","push the door","go inside","head deeper","walk forward","try the door","toward","approach",
+  "开门","进去","进入","前进","继续走","往里走","跟着","朝前走","试门","靠近","往",
 ];
 
-const hpTradeKeywords: Partial<Record<SceneId, string[]>> = {
-  archive: [
-    "force open cabinet",
-    "pry open cabinet",
-    "pry open drawer",
-    "tear open drawer",
-    "bare hands",
-    "rip open the file cabinet",
-    "强行拉开柜子",
-    "撬开抽屉",
-    "撬开柜门",
-    "徒手拉开",
-    "扯开柜子",
-  ],
-  clinic_hall: [
-    "push through broken glass",
-    "walk through glass",
-    "cross the broken glass",
-    "crawl through debris",
-    "step through the shards",
-    "穿过碎玻璃",
-    "踩过玻璃",
-    "顶着碎片过去",
-    "硬闯走廊",
-  ],
-  infirmary: [
-    "force open desk",
-    "force open drawer",
-    "rip open the drawer",
-    "break open the desk",
-    "tear open the nurse desk",
-    "强行拉开抽屉",
-    "撬开桌子",
-    "撬开医务室抽屉",
-    "砸开桌柜",
-  ],
-  basement: [
-    "push through the pain",
-    "follow the whispering trail",
-    "force the hidden door",
-    "crawl through the broken pipe",
-    "ignore the blood",
-    "忍痛前进",
-    "顺着低语走",
-    "强行推开暗门",
-    "钻过破裂管道",
-  ],
-  quarantine_room: [
-    "pull the sealed records free",
-    "stay in the room despite the pain",
-    "force open the sealed cabinet",
-    "tear the records free",
-    "硬撑着把记录拽出来",
-    "强行打开密封柜",
-    "忍痛留在房间里",
-    "把封存记录拽出来",
-  ],
-};
+const evidenceKeywords = [
+  "file","folder","record","ledger","desk","drawer","cabinet","paper","document","keycard","passcard","take","grab","pick up","open drawer","open desk","manifest","protocol","manual","contract","mail","letter","memo","photo",
+  "档案","文件","账本","记录","抽屉","桌子","柜子","卡","钥匙卡","拿","取走","拿走","打开抽屉","打开桌子","拿起","清单","手册","协议","合同","邮件","信","备忘录","照片",
+];
+
+const endingKeywords = [
+  "end session","leave now","escape with the evidence","leave","retreat","get out","run","exit","compile report",
+  "结束","离开","带着证据离开","撤退","逃走","出去","结束调查",
+];
+
+const basementCorroborationFlags = [
+  "transfer_manifest_found",
+  "restraint_protocol_found",
+  "partner_contract_found",
+  "parent_letter_found",
+  "ethics_memo_found",
+] as const;
+
+const infirmaryCorroborationFlags = [
+  "night_transfer_schedule_found",
+  "sedation_protocol_found",
+  "training_manual_found",
+  "dosage_variance_found",
+  "incident_photo_found",
+] as const;
 
 function includesAny(text: string, words: string[]) {
   return words.some((word) => text.includes(word));
@@ -142,6 +61,10 @@ function includesAny(text: string, words: string[]) {
 
 function addUniqueItem(items: string[], item: string) {
   return items.includes(item) ? items : [...items, item];
+}
+
+function countTrueFlags(state: GameState, flags: readonly string[]) {
+  return flags.filter((flag) => state.flags[flag]).length;
 }
 
 function hasEvidence(state: GameState) {
@@ -154,99 +77,87 @@ function hasEvidence(state: GameState) {
   );
 }
 
-function spendHp(nextState: GameState, amount: number) {
-  nextState.character.hp = Math.max(0, nextState.character.hp - amount);
-
-  if (nextState.character.hp <= 0) {
-    nextState.isFinished = true;
-    nextState.flags.hp_depleted = true;
-  }
+function isObservationIntent(text: string) {
+  return includesAny(text, skillKeywords.observation);
 }
 
-function applyHpTradeoff(nextState: GameState, text: string) {
-  const sceneKeywords = hpTradeKeywords[nextState.currentScene];
+function isPersuasionIntent(text: string) {
+  return includesAny(text, skillKeywords.persuasion);
+}
 
-  if (!sceneKeywords || !includesAny(text, sceneKeywords)) {
-    return "";
+function isWillpowerIntent(text: string) {
+  return includesAny(text, skillKeywords.willpower);
+}
+
+function isMoveIntent(text: string) {
+  return includesAny(text, moveKeywords);
+}
+
+function isEvidenceIntent(text: string) {
+  return includesAny(text, evidenceKeywords) || isObservationIntent(text);
+}
+
+function isEndingIntent(text: string) {
+  return includesAny(text, endingKeywords);
+}
+
+function hasSpecificClue(state: GameState, clue: string) {
+  return Boolean(state.flags[clue]);
+}
+
+function basementClueCount(state: GameState) {
+  return countTrueFlags(state, basementCorroborationFlags);
+}
+
+function infirmaryClueCount(state: GameState) {
+  return countTrueFlags(state, infirmaryCorroborationFlags);
+}
+
+function reconcileItems(nextState: GameState) {
+  if (nextState.flags.basement_unlocked) {
+    nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Basement Passcard");
   }
 
-  if (nextState.currentScene === "archive" && !nextState.flags.evidence_found) {
-    spendHp(nextState, 1);
-    nextState.flags.basement_unlocked = true;
-    nextState.flags.evidence_found = true;
-    nextState.flags.evidence_folder_found = true;
-    nextState.character.inventory = addUniqueItem(
-      nextState.character.inventory,
-      "Evidence Folder"
-    );
-    nextState.character.inventory = addUniqueItem(
-      nextState.character.inventory,
-      "Basement Passcard"
-    );
-
-    return "The player forces open the jammed archive cabinet with bare hands, slicing skin on rusted metal. It costs 1 HP, but an evidence folder and a basement passcard drop into reach.";
+  if (nextState.flags.quarantine_unlocked) {
+    nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Quarantine Keycard");
   }
 
-  if (
-    nextState.currentScene === "clinic_hall" &&
-    !nextState.flags.infirmary_hint &&
-    !nextState.flags.infirmary_unlocked
-  ) {
-    spendHp(nextState, 1);
-    nextState.flags.infirmary_hint = true;
-
-    return "The player pushes through broken glass and scattered debris in the clinic hall. It costs 1 HP, but the blood trail reveals which door leads to the infirmary.";
+  if (nextState.flags.evidence_folder_found || nextState.flags.evidence_found) {
+    if (nextState.scenario === "basement_case") {
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Evidence Folder");
+    }
   }
 
-  if (
-    nextState.currentScene === "infirmary" &&
-    !nextState.flags.quarantine_unlocked
-  ) {
-    spendHp(nextState, 1);
-    nextState.flags.quarantine_unlocked = true;
-    nextState.flags.evidence_found = true;
-    nextState.flags.night_shift_log_found = true;
-    nextState.character.inventory = addUniqueItem(
-      nextState.character.inventory,
-      "Medical Ledger"
-    );
-    nextState.character.inventory = addUniqueItem(
-      nextState.character.inventory,
-      "Quarantine Keycard"
-    );
-
-    return "The player forces the nurse's drawer open with raw strength. It costs 1 HP, but a medical ledger and a quarantine keycard are pulled free.";
+  if (nextState.flags.night_shift_log_found || nextState.flags.evidence_found) {
+    if (nextState.scenario === "infirmary_case") {
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Medical Ledger");
+    }
   }
 
-  if (
-    nextState.currentScene === "basement" &&
-    !nextState.flags.truth_found
-  ) {
-    spendHp(nextState, 1);
-    nextState.isFinished = true;
-    nextState.flags.truth_found = true;
+  const itemMap: Record<string, string> = {
+    transfer_manifest_found: "Transfer Manifest",
+    restraint_protocol_found: "Restraint Protocol",
+    partner_contract_found: "Partner Contract",
+    parent_letter_found: "Parent Letter",
+    ethics_memo_found: "Ethics Memo",
+    night_transfer_schedule_found: "Night Transfer Schedule",
+    sedation_protocol_found: "Sedation Protocol",
+    training_manual_found: "Training Manual",
+    dosage_variance_found: "Dosage Variance Sheet",
+    incident_photo_found: "Incident Photo",
+  };
 
-    return "The player pushes through the pain and follows the whispering trail into a hidden recess. It costs 1 HP, but the final basement records are recovered.";
+  for (const [flag, item] of Object.entries(itemMap)) {
+    if (nextState.flags[flag]) {
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, item);
+    }
   }
-
-  if (
-    nextState.currentScene === "quarantine_room" &&
-    !nextState.flags.truth_found
-  ) {
-    spendHp(nextState, 2);
-    nextState.isFinished = true;
-    nextState.flags.truth_found = true;
-
-    return "The player stays in the quarantine room long enough to wrench the sealed records free. It costs 2 HP, but the concealed treatment files are finally exposed.";
-  }
-
-  return "";
 }
 
 export function analyzeAction(action: string, scene: SceneId): ActionCheck {
   const text = action.toLowerCase();
 
-  if (includesAny(text, skillKeywords.observation)) {
+  if (isObservationIntent(text)) {
     return {
       requiresRoll: true,
       skill: "observation",
@@ -254,7 +165,7 @@ export function analyzeAction(action: string, scene: SceneId): ActionCheck {
     };
   }
 
-  if (includesAny(text, skillKeywords.persuasion)) {
+  if (isPersuasionIntent(text)) {
     return {
       requiresRoll: true,
       skill: "persuasion",
@@ -262,7 +173,7 @@ export function analyzeAction(action: string, scene: SceneId): ActionCheck {
     };
   }
 
-  if (includesAny(text, skillKeywords.willpower)) {
+  if (isWillpowerIntent(text)) {
     return {
       requiresRoll: true,
       skill: "willpower",
@@ -294,6 +205,7 @@ export function canEndSession(state: GameState) {
       state.flags.truth_found ||
       state.flags.hp_depleted ||
       state.flags.overwhelmed ||
+      state.flags.escaped_with_evidence ||
       hasEvidence(state)
   );
 }
@@ -301,24 +213,10 @@ export function canEndSession(state: GameState) {
 function applyFailurePenalty(
   nextState: GameState,
   rollResult: DiceResult | null,
-  scene: SceneId,
-  text: string
+  scene: SceneId
 ) {
   if (!rollResult || rollResult.outcome !== "fail") {
     return "";
-  }
-
-  if (includesAny(text, hardPushKeywords)) {
-    spendHp(nextState, 1);
-
-    let note =
-      "The attempt still goes badly, but the player forces it through with their body instead of backing off. 1 HP is lost instead of raising danger.";
-
-    if (nextState.character.hp <= 0) {
-      note += " The player collapses after the effort.";
-    }
-
-    return note;
   }
 
   nextState.danger = Math.min(nextState.maxDanger, nextState.danger + 1);
@@ -326,11 +224,13 @@ function applyFailurePenalty(
   let note = "The failed attempt raises the danger level.";
 
   if (scene === "basement" || scene === "quarantine_room") {
-    spendHp(nextState, 1);
+    nextState.character.hp = Math.max(0, nextState.character.hp - 1);
     note += " The hostile environment costs 1 HP.";
   }
 
   if (nextState.character.hp <= 0) {
+    nextState.isFinished = true;
+    nextState.flags.hp_depleted = true;
     note += " The player can no longer continue.";
   }
 
@@ -343,6 +243,112 @@ function applyFailurePenalty(
   return note;
 }
 
+function addBasementCorroboration(nextState: GameState, text: string, success: boolean) {
+  if (!success) return "";
+  if (!nextState.flags.evidence_folder_found) return "";
+
+  const broadEvidence = isObservationIntent(text) || isEvidenceIntent(text) || isPersuasionIntent(text) || isWillpowerIntent(text);
+
+  if (
+    !hasSpecificClue(nextState, "transfer_manifest_found") &&
+    (broadEvidence || includesAny(text, ["manifest", "elevator log", "freight", "转运", "清单", "货梯"]))
+  ) {
+    nextState.flags.transfer_manifest_found = true;
+    return "Behind the freight cage, the player uncovers a transfer manifest showing selected students were moved before sunrise under maintenance codes, with the infirmary listed as the handoff point and the basement listed as the holding stage.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "restraint_protocol_found") &&
+    (broadEvidence || includesAny(text, ["protocol", "restraint", "procedure", "约束", "协议", "流程"]))
+  ) {
+    nextState.flags.restraint_protocol_found = true;
+    return "A restraint protocol packet explains how agitation, silence, and compliance were scored after sedation. Fear was not being treated here. It was being measured and standardized.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "partner_contract_found") &&
+    (broadEvidence || includesAny(text, ["contract", "agreement", "partner", "ward", "合同", "合作", "病区"]))
+  ) {
+    nextState.flags.partner_contract_found = true;
+    return "A contract bundle links the school to an external behavior unit. The language is dry, but the meaning is not: students labeled unstable could be transferred off-book under a special intervention partnership.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "parent_letter_found") &&
+    (broadEvidence || includesAny(text, ["letter", "guardian", "appeal", "family", "信", "家长", "申诉", "家属"]))
+  ) {
+    nextState.flags.parent_letter_found = true;
+    return "Folded into a damaged file is a parent's unanswered letter asking why their child was marked discharged before anyone from the family had arrived. It proves the paper trail was altered after the fact.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "ethics_memo_found") &&
+    (broadEvidence || includesAny(text, ["memo", "ethics", "board", "reputation", "备忘录", "伦理", "声誉", "校董"]))
+  ) {
+    nextState.flags.ethics_memo_found = true;
+    return "An internal memo warns that public incidents involving unstable students could damage rankings, donations, and cooperation agreements. It recommends tighter cross-department handling and stricter documentation discipline.";
+  }
+
+  return "";
+}
+
+function addInfirmaryCorroboration(nextState: GameState, text: string, success: boolean) {
+  if (!success) return "";
+  if (!nextState.flags.night_shift_log_found) return "";
+
+  const broadEvidence = isObservationIntent(text) || isEvidenceIntent(text) || isPersuasionIntent(text) || isWillpowerIntent(text);
+
+  if (
+    !hasSpecificClue(nextState, "night_transfer_schedule_found") &&
+    (broadEvidence || includesAny(text, ["schedule", "timetable", "night transfer", "时间表", "夜班", "转运"]))
+  ) {
+    nextState.flags.night_transfer_schedule_found = true;
+    return "The player uncovers a night transfer schedule showing that selected students were moved between 2:10 and 4:30 a.m., after public logs had already been closed and before day staff arrived.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "sedation_protocol_found") &&
+    (broadEvidence || includesAny(text, ["sedation", "dose", "protocol", "medication", "镇静", "剂量", "流程"]))
+  ) {
+    nextState.flags.sedation_protocol_found = true;
+    return "A sedation protocol sheet lays out dosage escalation tied to resistance, eye contact, speech volume, and refusal. Care was being calibrated for obedience rather than recovery.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "training_manual_found") &&
+    (broadEvidence || includesAny(text, ["manual", "training", "memo", "assessment", "手册", "培训", "备忘录"]))
+  ) {
+    nextState.flags.training_manual_found = true;
+    return "A staff training manual teaches that strict quiet, mechanical restraint, and emotional distance are signs of professional discipline during high-risk student management.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "dosage_variance_found") &&
+    (broadEvidence || includesAny(text, ["variance", "dosage", "ampoule", "记录差异", "药量", "安瓿"]))
+  ) {
+    nextState.flags.dosage_variance_found = true;
+    return "A dosage variance sheet shows repeated corrections made after dawn. The visible chart records mild observation. The sealed sheet records heavier sedative use and longer immobilization.";
+  }
+
+  if (
+    !hasSpecificClue(nextState, "incident_photo_found") &&
+    (broadEvidence || includesAny(text, ["photo", "camera", "polaroid", "照片", "相机", "拍立得"]))
+  ) {
+    nextState.flags.incident_photo_found = true;
+    return "Tucked behind a supply cabinet is a blurred incident photo: a restrained student on a narrow bed, the timestamp clipped, the infirmary curtain visible, and a transfer trolley waiting just outside frame.";
+  }
+
+  return "";
+}
+
+function basementTruthReady(state: GameState) {
+  return state.flags.evidence_folder_found && basementClueCount(state) >= 3;
+}
+
+function infirmaryTruthReady(state: GameState) {
+  return state.flags.night_shift_log_found && infirmaryClueCount(state) >= 3;
+}
+
 function applyBasementScenario(
   nextState: GameState,
   text: string,
@@ -351,235 +357,135 @@ function applyBasementScenario(
   let logicNote = "";
 
   if (nextState.currentScene === "gate") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-      ]) && success
-    ) {
+    if ((isObservationIntent(text) || isPersuasionIntent(text)) && !nextState.flags.found_gate_clue) {
       nextState.flags.found_gate_clue = true;
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Crumpled Map"
-      );
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Crumpled Map");
       logicNote =
-        "The player notices scratch marks near the side entrance and finds a crumpled map hidden under dead leaves.";
+        "Near the side entrance, the player finds a crumpled utility map and a torn withdrawal slip stamped after midnight. It suggests students were not leaving through the main gate at all, but through the service side of the campus.";
     }
 
-    if (
-      includesAny(text, [
-        "open gate",
-        "use key",
-        "enter",
-        "go inside",
-        "push the door",
-        "开门",
-        "进去",
-        "进入",
-        "用钥匙",
-      ])
-    ) {
-      const canEnter =
-        nextState.character.inventory.includes("Old Key") ||
-        nextState.flags.found_gate_clue;
-
-      if (canEnter) {
-        nextState.currentScene = "hallway";
-        logicNote =
-          "The side entrance opens with a heavy click, and the player steps into a dark hallway.";
-      } else {
-        logicNote =
-          "The entrance does not open. The player may need to inspect the area first.";
-      }
+    if (isMoveIntent(text)) {
+      nextState.flags.found_gate_clue = true;
+      nextState.currentScene = "hallway";
+      logicNote =
+        success
+          ? "The player gets past the entrance and steps into a dark hallway. The building feels organized rather than chaotic, as if someone expected these late-night movements."
+          : "The player forces their way through the side entrance and stumbles into a dark hallway, drawing attention and raising the pressure around the investigation.";
     }
   }
 
   if (nextState.currentScene === "hallway") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "listen",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "倾听",
-      ]) && success
-    ) {
+    if ((isObservationIntent(text) || isPersuasionIntent(text) || isMoveIntent(text)) && !nextState.flags.archive_hint) {
       nextState.flags.archive_hint = true;
       logicNote =
-        "A faint draft slips through a cracked archive door. A metal sign points deeper into the building.";
+        "By following the draft, old floor signs, and faint lift noise, the player identifies the archive corridor. Someone built a route from record keeping to transport, not from care to recovery.";
     }
 
-    if (
-      includesAny(text, [
-        "ask",
-        "talk",
-        "speak",
-        "call",
-        "shout",
-        "询问",
-        "搭话",
-        "呼喊",
-        "交谈",
-      ]) && success
-    ) {
+    if (isPersuasionIntent(text) && success && !nextState.flags.archive_unlocked) {
       nextState.flags.archive_unlocked = true;
       logicNote =
-        "A nervous caretaker answers from the shadows and reveals that the archive room was left unlocked.";
+        "A frightened caretaker voice or half-heard reply confirms that the archive was used to alter disciplinary files before students were moved elsewhere.";
     }
 
     if (
       includesAny(text, [
-        "go to archive",
-        "open archive",
-        "enter archive",
-        "去档案室",
-        "打开档案室",
-        "进入档案室",
-      ])
+        "archive","档案室","follow the sign","follow the draft","marked door","deeper inside","继续往里","顺着标记",
+      ]) ||
+      (isMoveIntent(text) && nextState.flags.archive_hint)
     ) {
-      if (nextState.flags.archive_hint || nextState.flags.archive_unlocked) {
-        nextState.currentScene = "archive";
-        logicNote =
-          "The player moves into the archive room, where rows of dusty cabinets stand under weak fluorescent light.";
-      } else {
-        logicNote =
-          "The archive door is hard to identify in the dark. More investigation may help.";
-      }
+      nextState.flags.archive_hint = true;
+      nextState.currentScene = "archive";
+      logicNote =
+        "The player reaches the archive room, where dusty cabinets and reorganized files suggest records were rewritten before anyone was ever declared missing.";
     }
   }
 
   if (nextState.currentScene === "archive") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "read",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "阅读",
-      ]) && success
-    ) {
+    if (isEvidenceIntent(text) && !nextState.flags.evidence_folder_found) {
       nextState.flags.basement_unlocked = true;
       nextState.flags.evidence_found = true;
       nextState.flags.evidence_folder_found = true;
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Evidence Folder"
-      );
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Basement Passcard"
-      );
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Evidence Folder");
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Basement Passcard");
       logicNote =
-        "Inside a damaged personnel file, the player finds a basement passcard and an evidence folder tied to the disappearance.";
+        success
+          ? "Inside the archive, the player recovers an evidence folder and a basement passcard. The folder is enough to show that students were relabeled as disciplinary risks before being removed from the normal record system."
+          : "Even under pressure, the player tears enough material free to recover an evidence folder and basement passcard. The surviving paperwork still shows that records were altered before students were declared gone.";
+    } else if (isEvidenceIntent(text) && !nextState.flags.basement_transfer_route_found) {
+      nextState.flags.basement_transfer_route_found = true;
+      logicNote =
+        success
+          ? "A second pass through the archive reveals the missing chain: infirmary intake, archive revision, service lift movement, and basement holding. It is no longer just a disappearance. It is a route."
+          : "The player cannot sort every file cleanly, but still reconstructs the route well enough to see that the basement was part of a controlled transfer chain.";
     }
 
     if (
-      includesAny(text, [
-        "go basement",
-        "descend",
-        "go downstairs",
-        "open basement",
-        "去地下室",
-        "下楼",
-        "进入地下室",
-      ])
+      includesAny(text, ["basement","downstairs","elevator","lower level","地下室","下楼","电梯"]) ||
+      (isMoveIntent(text) && nextState.flags.basement_unlocked && nextState.flags.basement_transfer_route_found)
     ) {
-      if (nextState.flags.basement_unlocked) {
+      if (nextState.flags.basement_unlocked && nextState.flags.basement_transfer_route_found) {
         nextState.currentScene = "basement";
         logicNote =
-          "The elevator shudders downward. The basement is colder than expected, and the air smells metallic.";
-      } else {
+          "The player takes the way down into the basement. The cold air, chemical smell, and freight markings make it clear this place was built for controlled movement, not storage.";
+      } else if (!logicNote) {
         logicNote =
-          "The basement access remains locked. The archive may contain what you need.";
+          "The basement access exists, but the archive still holds unanswered gaps. The player needs to reconstruct the transfer route before the descent means anything.";
       }
     }
 
-    if (
-      includesAny(text, [
-        "end session",
-        "leave now",
-        "escape with the evidence",
-        "结束",
-        "离开",
-        "带着证据离开",
-      ]) && hasEvidence(nextState)
-    ) {
+    if (isEndingIntent(text) && hasEvidence(nextState)) {
       nextState.isFinished = true;
       nextState.flags.escaped_with_evidence = true;
       nextState.flags.extracted_alive = true;
       logicNote =
-        "The player decides to end the investigation early and leave with the evidence folder.";
+        "The player leaves with the paper trail intact. Even without the deepest records, the archive already proves students were administratively erased before being transferred.";
     }
   }
 
   if (nextState.currentScene === "basement") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "open file",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "打开文件",
-      ]) && success
-    ) {
-      nextState.isFinished = true;
-      nextState.flags.truth_found = true;
-      logicNote =
-        "The player uncovers records proving the disappearance was covered up by the school administration.";
+    const corroborationNote = addBasementCorroboration(nextState, text, success);
+    if (corroborationNote) {
+      logicNote = corroborationNote;
     }
 
-    if (
+    const truthIntent =
       includesAny(text, [
-        "resist",
-        "pray",
-        "stay calm",
-        "抵抗",
-        "祈祷",
-        "冷静",
-      ]) && success
-    ) {
-      nextState.isFinished = true;
-      nextState.flags.truth_found = true;
-      logicNote =
-        "The player steadies their nerves, follows the whispers, and reaches the hidden evidence room in the basement.";
+        "master ledger","hidden office","steel cabinet","compare records","reconstruct the chain","who signed this","why were they moved",
+        "真正的记录","总账","隐藏办公室","钢柜","比对记录","追查链条","谁签了字","为什么被转移",
+      ]) ||
+      (isEvidenceIntent(text) && basementTruthReady(nextState)) ||
+      (isWillpowerIntent(text) && basementTruthReady(nextState));
+
+    if (truthIntent) {
+      if (success && basementTruthReady(nextState)) {
+        nextState.isFinished = true;
+        nextState.flags.truth_found = true;
+        nextState.flags.basement_experiment_found = true;
+        nextState.flags.systemic_pressure_found = true;
+        logicNote =
+          "When the player compares the manifest, restraint packet, partner contract, family complaint, and ethics memo, the basement record becomes legible. Students marked unstable, defiant, or reputationally risky were first routed through infirmary observation, sedated under observation codes, then moved by service lift to a privately supervised behavior lab. The program measured obedience, stress tolerance, and emotional suppression while being justified as safety, campus order, and performance protection. The cruelty was procedural, not chaotic.";
+      } else if (hasEvidence(nextState)) {
+        nextState.isFinished = true;
+        nextState.flags.escaped_with_evidence = true;
+        nextState.flags.extracted_alive = true;
+        logicNote =
+          "The player cannot secure the full basement chain, but escapes with enough evidence to show that disappearance here was systematic: paperwork revision, controlled sedation, basement transfer, and off-book behavioral management.";
+      } else {
+        nextState.isFinished = true;
+        nextState.flags.overwhelmed = true;
+        logicNote =
+          "The basement closes in before the player can secure proof. Even so, the fragments suggest this was never a single kidnapping, but a system for quietly processing inconvenient students.";
+      }
     }
 
-    if (
-      includesAny(text, [
-        "end session",
-        "leave now",
-        "escape with the evidence",
-        "结束",
-        "离开",
-        "带着证据离开",
-      ]) && hasEvidence(nextState)
-    ) {
+    if (isEndingIntent(text) && hasEvidence(nextState)) {
       nextState.isFinished = true;
       nextState.flags.escaped_with_evidence = true;
       nextState.flags.extracted_alive = true;
-      logicNote =
-        "The player retreats from the basement with enough evidence to file a report.";
+      if (!logicNote) {
+        logicNote =
+          "The player retreats from the basement with enough evidence to expose the transfer route and the hidden program, even without collecting every final document.";
+      }
     }
   }
 
@@ -594,235 +500,135 @@ function applyInfirmaryScenario(
   let logicNote = "";
 
   if (nextState.currentScene === "courtyard") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-      ]) && success
-    ) {
+    if ((isObservationIntent(text) || isPersuasionIntent(text)) && !nextState.flags.found_courtyard_clue) {
       nextState.flags.found_courtyard_clue = true;
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Clinic Floor Plan"
-      );
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Clinic Floor Plan");
       logicNote =
-        "Near the boarded window, the player finds a faded floor plan showing a back entrance to the infirmary wing.";
+        "Near the boarded window, the player finds a faded floor plan and a disposal timetable. It suggests the infirmary wing had its own after-hours route for moving patients without using the main corridor.";
     }
 
-    if (
-      includesAny(text, [
-        "open door",
-        "use key",
-        "enter",
-        "go inside",
-        "push the door",
-        "开门",
-        "进去",
-        "进入",
-        "用钥匙",
-      ])
-    ) {
-      const canEnter =
-        nextState.character.inventory.includes("Old Key") ||
-        nextState.flags.found_courtyard_clue;
-
-      if (canEnter) {
-        nextState.currentScene = "clinic_hall";
-        logicNote =
-          "The warped service door gives way, revealing a narrow corridor lined with cracked medicine cabinets.";
-      } else {
-        logicNote =
-          "The infirmary entrance stays sealed. A closer look around the courtyard may reveal another way in.";
-      }
+    if (isMoveIntent(text)) {
+      nextState.flags.found_courtyard_clue = true;
+      nextState.currentScene = "clinic_hall";
+      logicNote =
+        success
+          ? "The player reaches the clinic hall, where cracked cabinets and fluorescent hum make the space feel more procedural than humane."
+          : "The player squeezes or forces their way into the infirmary wing, reaching the clinic hall while setting off more danger in the process.";
     }
   }
 
   if (nextState.currentScene === "clinic_hall") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "listen",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "倾听",
-      ]) && success
-    ) {
+    if ((isObservationIntent(text) || isPersuasionIntent(text) || isMoveIntent(text)) && !nextState.flags.infirmary_hint) {
       nextState.flags.infirmary_hint = true;
       logicNote =
-        "A dim emergency light flickers beside the main infirmary, and a second door is marked quarantine in peeling paint.";
+        "The player spots the infirmary door, a quarantine sign, and coded wall marks showing certain students were routed away from ordinary treatment and into controlled observation.";
     }
 
-    if (
-      includesAny(text, [
-        "ask",
-        "talk",
-        "speak",
-        "call",
-        "shout",
-        "询问",
-        "搭话",
-        "呼喊",
-        "交谈",
-      ]) && success
-    ) {
+    if (isPersuasionIntent(text) && success && !nextState.flags.infirmary_unlocked) {
       nextState.flags.infirmary_unlocked = true;
       logicNote =
-        "A trembling voice from an old intercom warns that the nurse kept her real records inside the infirmary desk.";
+        "A trembling voice from the intercom confirms that the nurse kept separate records for the night shift. Public charts showed fever or panic. The hidden ledger tracked restraint, dosage, and transfer readiness.";
     }
 
     if (
       includesAny(text, [
-        "go infirmary",
-        "open infirmary",
-        "enter infirmary",
-        "去医务室",
-        "打开医务室",
-        "进入医务室",
-      ])
+        "infirmary","clinic room","nurse room","医务室","诊室","门牌","quarantine sign","door with light",
+      ]) ||
+      (isMoveIntent(text) && nextState.flags.infirmary_hint)
     ) {
-      if (nextState.flags.infirmary_hint || nextState.flags.infirmary_unlocked) {
-        nextState.currentScene = "infirmary";
-        logicNote =
-          "The player enters the infirmary. Dust hangs over overturned beds and a desk drawer is half open.";
-      } else {
-        logicNote =
-          "The main infirmary is easy to miss from the dark corridor. More investigation may help.";
-      }
+      nextState.flags.infirmary_hint = true;
+      nextState.currentScene = "infirmary";
+      logicNote =
+        "The player enters the infirmary, where overturned beds, medical trays, and a half-open desk suggest treatment here often ended in paperwork rather than recovery.";
     }
   }
 
   if (nextState.currentScene === "infirmary") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "read",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "阅读",
-      ]) && success
-    ) {
+    if (isEvidenceIntent(text) && !nextState.flags.night_shift_log_found) {
       nextState.flags.quarantine_unlocked = true;
       nextState.flags.evidence_found = true;
       nextState.flags.night_shift_log_found = true;
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Medical Ledger"
-      );
-      nextState.character.inventory = addUniqueItem(
-        nextState.character.inventory,
-        "Quarantine Keycard"
-      );
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Medical Ledger");
+      nextState.character.inventory = addUniqueItem(nextState.character.inventory, "Quarantine Keycard");
       logicNote =
-        "Inside the nurse's desk, the player finds a medical ledger and a quarantine keycard listing students whose names were quietly erased.";
+        success
+          ? "Inside the nurse's desk, the player finds a medical ledger and a quarantine keycard. The ledger shows students logged as fever, panic, or observation cases, then quietly reassigned to restricted rooms and removed from the public register before dawn."
+          : "Even in a rushed search, the player pulls out a medical ledger and quarantine keycard. The entries still make one thing clear: students were not discharged, but administratively converted into off-book cases before transfer.";
+    } else if (isEvidenceIntent(text) && !nextState.flags.infirmary_transfer_route_found) {
+      nextState.flags.infirmary_transfer_route_found = true;
+      logicNote =
+        success
+          ? "A second sweep through the infirmary links the ledger to room numbers, sedative drawers, and trolley routes. It becomes clear that the ward did not merely observe students. It staged them for transfer."
+          : "The player cannot fully sort the infirmary paperwork, but still pieces together that the ward's records and physical layout were designed to support controlled overnight movement.";
     }
 
     if (
-      includesAny(text, [
-        "go quarantine",
-        "open quarantine",
-        "enter quarantine",
-        "去隔离室",
-        "打开隔离室",
-        "进入隔离室",
-      ])
+      includesAny(text, ["quarantine","sealed room","back room","隔离室","封闭房间","后面的门"]) ||
+      (isMoveIntent(text) && nextState.flags.quarantine_unlocked && nextState.flags.infirmary_transfer_route_found)
     ) {
-      if (nextState.flags.quarantine_unlocked) {
+      if (nextState.flags.quarantine_unlocked && nextState.flags.infirmary_transfer_route_found) {
         nextState.currentScene = "quarantine_room";
         logicNote =
-          "The keycard opens the quarantine room. The air is chemical and cold, and one cabinet door is still moving.";
-      } else {
+          "The player enters the quarantine room. The air smells of antiseptic and old sedatives, and the layout makes it obvious this space was used to contain people, not heal them.";
+      } else if (!logicNote) {
         logicNote =
-          "The quarantine room remains locked. The infirmary desk may contain what you need.";
+          "The quarantine room is there, but entering it blindly would miss the point. The player still needs to understand how the ward prepared students for night transfer.";
       }
     }
 
-    if (
-      includesAny(text, [
-        "end session",
-        "leave now",
-        "escape with the evidence",
-        "结束",
-        "离开",
-        "带着证据离开",
-      ]) && hasEvidence(nextState)
-    ) {
+    if (isEndingIntent(text) && hasEvidence(nextState)) {
       nextState.isFinished = true;
       nextState.flags.escaped_with_evidence = true;
       nextState.flags.extracted_alive = true;
       logicNote =
-        "The player withdraws with the medical ledger instead of pushing deeper into the infirmary wing.";
+        "The player leaves with the ledger intact. Even without opening the deepest room, the records already show how care was converted into a transfer pipeline.";
     }
   }
 
   if (nextState.currentScene === "quarantine_room") {
-    if (
-      includesAny(text, [
-        "look",
-        "investigate",
-        "inspect",
-        "search",
-        "open cabinet",
-        "观察",
-        "检查",
-        "调查",
-        "搜查",
-        "打开柜子",
-      ]) && success
-    ) {
-      nextState.isFinished = true;
-      nextState.flags.truth_found = true;
-      logicNote =
-        "The player uncovers sealed treatment records proving the infirmary was used to hide coerced experiments and disappearances.";
+    const corroborationNote = addInfirmaryCorroboration(nextState, text, success);
+    if (corroborationNote) {
+      logicNote = corroborationNote;
     }
 
-    if (
+    const truthIntent =
       includesAny(text, [
-        "resist",
-        "pray",
-        "stay calm",
-        "steady",
-        "抵抗",
-        "祈祷",
-        "冷静",
-      ]) && success
-    ) {
-      nextState.isFinished = true;
-      nextState.flags.truth_found = true;
-      logicNote =
-        "The player endures the chemical stench, follows the scraping sound, and discovers the sealed quarantine records behind a false wall.";
+        "sealed cabinet","master protocol","compare ledgers","follow the signatures","why the night shift exists","master file",
+        "密封柜","总协议","比对账本","追查签字","夜班为什么存在","总档案",
+      ]) ||
+      (isEvidenceIntent(text) && infirmaryTruthReady(nextState)) ||
+      (isWillpowerIntent(text) && infirmaryTruthReady(nextState));
+
+    if (truthIntent) {
+      if (success && infirmaryTruthReady(nextState)) {
+        nextState.isFinished = true;
+        nextState.flags.truth_found = true;
+        nextState.flags.infirmary_experiment_found = true;
+        nextState.flags.systemic_pressure_found = true;
+        logicNote =
+          "When the player compares the night transfer schedule, sedation sheet, training manual, dosage variance, and incident photo, the ward's logic becomes explicit. Students flagged as unstable, disruptive, self-harming, or reputationally risky were isolated, medicated, scored for compliance, and transferred before dawn to partner wards. The program was framed as resilience optimization and crisis prevention, but functioned as behavior control. Staff manuals show overworked personnel were trained to treat silence, restraint, and dosage discipline as professional success.";
+      } else if (hasEvidence(nextState)) {
+        nextState.isFinished = true;
+        nextState.flags.escaped_with_evidence = true;
+        nextState.flags.extracted_alive = true;
+        logicNote =
+          "The player cannot secure every sealed record, but escapes with enough material to prove the pattern: students entered under ordinary medical labels, were isolated under night protocols, and became test subjects in a punitive treatment system.";
+      } else {
+        nextState.isFinished = true;
+        nextState.flags.overwhelmed = true;
+        logicNote =
+          "The quarantine room becomes unmanageable before the player can carry proof out. Even so, the room makes the moral shape of the system clear: people were processed as liabilities, not patients.";
+      }
     }
 
-    if (
-      includesAny(text, [
-        "end session",
-        "leave now",
-        "escape with the evidence",
-        "结束",
-        "离开",
-        "带着证据离开",
-      ]) && hasEvidence(nextState)
-    ) {
+    if (isEndingIntent(text) && hasEvidence(nextState)) {
       nextState.isFinished = true;
       nextState.flags.escaped_with_evidence = true;
       nextState.flags.extracted_alive = true;
-      logicNote =
-        "The player escapes the infirmary wing with enough records to expose part of the case.";
+      if (!logicNote) {
+        logicNote =
+          "The player escapes the infirmary wing with enough records to expose how the medical system separated, tracked, and transferred students under the language of care.";
+      }
     }
   }
 
@@ -846,25 +652,15 @@ export function applyGameLogic(
 
   nextState.turnCount += 1;
 
-  const hpTradeNote = applyHpTradeoff(nextState, text);
   const success = rollResult ? rollResult.outcome !== "fail" : true;
+  const failureNote = applyFailurePenalty(nextState, rollResult, state.currentScene);
 
-  let failureNote = "";
-  let logicNote = hpTradeNote;
+  let logicNote =
+    state.scenario === "infirmary_case"
+      ? applyInfirmaryScenario(nextState, text, success)
+      : applyBasementScenario(nextState, text, success);
 
-  if (!hpTradeNote) {
-    logicNote =
-      state.scenario === "infirmary_case"
-        ? applyInfirmaryScenario(nextState, text, success)
-        : applyBasementScenario(nextState, text, success);
-
-    failureNote = applyFailurePenalty(
-      nextState,
-      rollResult,
-      state.currentScene,
-      text
-    );
-  }
+  reconcileItems(nextState);
 
   if (failureNote) {
     logicNote = logicNote ? `${logicNote} ${failureNote}` : failureNote;
