@@ -1,70 +1,19 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import { GameState, Role, ScenarioId, SceneId } from "@/types/game";
+import { GameMode, GameState, Role, ScenarioId, SceneId } from "@/types/game";
 
 type StartRequestBody = {
   role?: Role;
   scenario?: ScenarioId;
+  gameMode?: GameMode;
   maxDanger?: number;
+  name?: string;
 };
 
-function createCharacter(role: Role) {
-  if (role === "detective") {
-    return {
-      role,
-      name: "Investigator",
-      hp: 10,
-      observation: 3,
-      persuasion: 1,
-      willpower: 2,
-      inventory: ["Flashlight", "Old Key"],
-    };
-  }
-
-  if (role === "hacker") {
-    return {
-      role,
-      name: "Hacker",
-      hp: 9,
-      observation: 2,
-      persuasion: 1,
-      willpower: 3,
-      inventory: ["Phone Light", "Signal Scrambler"],
-    };
-  }
-
-  return {
-    role,
-    name: "Priest",
-    hp: 11,
-    observation: 1,
-    persuasion: 2,
-    willpower: 4,
-    inventory: ["Cross", "Prayer Book"],
-  };
+function sanitizeName(name?: string) {
+  const cleaned = (name || "").trim().replace(/\s+/g, " ");
+  return cleaned.slice(0, 24);
 }
-
-const scenarioConfig: Record<
-  ScenarioId,
-  {
-    world: string;
-    startScene: SceneId;
-    intro: string;
-  }
-> = {
-  basement_case: {
-    world: "Basement Case File",
-    startScene: "gate",
-    intro:
-      "Rain needles the abandoned school building. A message from an unknown sender claims the missing student's file was moved to the basement tonight.",
-  },
-  infirmary_case: {
-    world: "Infirmary Night Shift",
-    startScene: "courtyard",
-    intro:
-      "The old school infirmary should have been sealed years ago. Tonight, a voice note claims the nurse on duty kept records that explain why several students vanished from the attendance list.",
-  },
-};
 
 function sanitizeRole(role?: Role): Role {
   if (role === "detective" || role === "hacker" || role === "priest") {
@@ -80,29 +29,105 @@ function sanitizeScenario(scenario?: ScenarioId): ScenarioId {
   return "basement_case";
 }
 
-function sanitizeMaxDanger(value?: number) {
-  return value === 5 || value === 10 || value === 15 ? value : 10;
+function sanitizeGameMode(gameMode?: GameMode): GameMode {
+  return gameMode === "long" ? "long" : "short";
 }
+
+function sanitizeMaxDanger(gameMode: GameMode, value?: number) {
+  if (value === 5 || value === 10 || value === 15) {
+    return value;
+  }
+  return gameMode === "long" ? 15 : 10;
+}
+
+function createCharacter(role: Role, name?: string) {
+  if (role === "detective") {
+    return {
+      role,
+      name: name || "Detective",
+      hp: 10,
+      observation: 3,
+      persuasion: 1,
+      willpower: 2,
+      inventory: ["Flashlight", "Case Notebook"],
+    };
+  }
+
+  if (role === "hacker") {
+    return {
+      role,
+      name: name || "Hacker",
+      hp: 9,
+      observation: 2,
+      persuasion: 1,
+      willpower: 3,
+      inventory: ["Phone Light", "Signal Interceptor"],
+    };
+  }
+
+  return {
+    role,
+    name: name || "Priest",
+    hp: 11,
+    observation: 1,
+    persuasion: 2,
+    willpower: 4,
+    inventory: ["Cross", "Prayer Book"],
+  };
+}
+
+const scenarioConfig: Record<
+  ScenarioId,
+  {
+    world: string;
+    startScene: SceneId;
+    intro: Record<GameMode, string>;
+  }
+> = {
+  basement_case: {
+    world: "St. Alden Residential Academy",
+    startScene: "gate",
+    intro: {
+      short:
+        "Years after the St. Alden fire, an explorer team uploaded footage of a hidden underground treatment room. Their video shows a damaged Student Wellness Center sign, restraint beds, and the Helix logo. You arrive at the ruined main entrance because one thing in the footage feels impossible to ignore: this place already feels familiar.",
+      long:
+        "Years after the St. Alden fire, an explorer team uploaded longer footage from a hidden underground treatment room. Alongside the damaged Student Wellness Center sign and Helix logo, there are freeze-frames of altered class photos, route markings, and one corridor that makes your pulse spike before you even know why. You arrive at the ruined main entrance knowing this will not be a quick sweep. To get the truth out, you will need to rebuild the hidden route step by step.",
+    },
+  },
+  infirmary_case: {
+    world: "St. Alden Residential Academy",
+    startScene: "courtyard",
+    intro: {
+      short:
+        "The reopened St. Alden case has led you to the outer edge of Student Wellness Center. Explorer rope marks still hang from a broken window, and a faded treatment slogan peels off the wall. Somewhere inside, Nina and Lucas left traces for whoever came back to finish what they could not.",
+      long:
+        "The reopened St. Alden case has led you to the outer edge of Student Wellness Center. Explorer rope marks still hang from a broken window, and the treatment slogans on the wall peel away to reveal older room numbers underneath. The footage, the reopened case file, and a pressure in your own memory all point here. This run will take patience: Nina’s marks, Helix’s paperwork, and your own missing history will have to be reassembled in separate layers.",
+    },
+  },
+};
 
 export async function POST(req: Request) {
   const body = (await req.json()) as StartRequestBody;
 
   const role = sanitizeRole(body.role);
   const scenario = sanitizeScenario(body.scenario);
-  const maxDanger = sanitizeMaxDanger(body.maxDanger);
+  const gameMode = sanitizeGameMode(body.gameMode);
+  const maxDanger = sanitizeMaxDanger(gameMode, body.maxDanger);
+  const safeName = sanitizeName(body.name);
   const config = scenarioConfig[scenario];
 
   const state: GameState = {
     sessionId: randomUUID(),
     world: config.world,
     scenario,
+    gameMode,
     currentScene: config.startScene,
-    character: createCharacter(role),
+    character: createCharacter(role, safeName),
     flags: {},
     log: [
       {
         role: "narrator",
-        text: config.intro,
+        text: config.intro[gameMode],
       },
     ],
     isFinished: false,

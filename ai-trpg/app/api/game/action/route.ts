@@ -35,163 +35,220 @@ function infirmaryClueCount(state: GameState) {
   ].filter((flag) => state.flags[flag]).length;
 }
 
+function isLongMode(state: GameState) {
+  return state.gameMode === "long";
+}
+
 function getSceneSuggestions(state: GameState) {
   if (state.scenario === "basement_case") {
     switch (state.currentScene) {
       case "gate":
-        return [
-          "Inspect the side entrance",
-          "Check what route the map implies",
-          "Try to get inside",
+        return isLongMode(state)
+          ? [
+              "Inspect the explorer phone footage near the gate",
+              "Study the burned entrance for Nina's mark",
+              "Push inside the ruined school",
+            ]
+          : [
+              "Inspect the explorer traces near the gate",
+              "Study the burned entrance for Nina's mark",
+              "Push inside the ruined school",
+            ];
+      case "hallway": {
+        const suggestions = [
+          "Search the corridor for Lucas's clue",
+          "Check the altered class photos",
         ];
-      case "hallway":
-        return [
-          "Search the corridor for archive signs",
-          "Ask who used the archive at night",
-          "Follow the marked door deeper inside",
-        ];
-      case "archive":
+        if (isLongMode(state) && !state.flags.memory_trigger_found) {
+          suggestions.push("Steady yourself and test the familiar memory");
+        } else {
+          suggestions.push("Move toward the archive");
+        }
+        return suggestions;
+      }
+      case "archive": {
         if (!state.flags.evidence_folder_found) {
           return [
-            "Search the cabinets for the missing file",
-            "Open the damaged personnel folders",
-            "Inspect access notes near the elevator",
+            "Search the sealed drawers",
+            "Inspect erased student files",
+            "Look for Lucas's hidden route note",
           ];
         }
         if (!state.flags.basement_transfer_route_found) {
           return [
-            "Cross-check the archive pages for transfer patterns",
-            "Trace how records connect to the service lift",
-            "Look for the route that links infirmary and basement",
+            "Compare the archive files and service map",
+            "Trace the route into Student Wellness Center",
+            "Look for the hidden wall behind the records",
+          ];
+        }
+        if (isLongMode(state) && !state.flags.lucas_map_completed) {
+          return [
+            "Reassemble Lucas's map fragments",
+            "Compare the erased names and route marks",
+            "Look for the final 'Not treatment' note",
           ];
         }
         return [
-          "Descend to the basement",
-          "Leave now with the archive evidence",
+          "Descend into the underground core",
+          "Leave now with Lucas's dossier",
           "Review the transfer route one more time",
         ];
+      }
       case "basement": {
         const suggestions: string[] = [];
         if (!state.flags.transfer_manifest_found) {
-          suggestions.push("Inspect the freight manifest");
+          suggestions.push("Look for Lucas's underground route fragment");
         }
         if (!state.flags.restraint_protocol_found) {
-          suggestions.push("Search for restraint procedures");
+          suggestions.push("Search the treatment restraint protocol");
         }
         if (!state.flags.partner_contract_found) {
-          suggestions.push("Look for a partner contract");
+          suggestions.push("Look for the Helix contract");
         }
         if (!state.flags.parent_letter_found) {
-          suggestions.push("Search for a family complaint letter");
+          suggestions.push("Search for a parent's unanswered letter");
         }
         if (!state.flags.ethics_memo_found) {
-          suggestions.push("Look for an internal ethics or reputation memo");
+          suggestions.push("Look for the fire cleanup memo");
         }
-        if (basementClueCount(state) >= 3) {
-          suggestions.push("Compare the basement records and reconstruct the full chain");
+        if (isLongMode(state) && !state.flags.release_record_found) {
+          suggestions.push("Look for the release approval file");
+        }
+        if (isLongMode(state) && state.flags.release_record_found && !state.flags.escape_log_found) {
+          suggestions.push("Search Ethan's escape incident log");
+        }
+        if (
+          basementClueCount(state) >= (isLongMode(state) ? 4 : 3) &&
+          (!isLongMode(state) || (state.flags.release_record_found && state.flags.escape_log_found))
+        ) {
+          suggestions.push("Compare the files and check your release record");
         }
         suggestions.push("Leave with the evidence");
         return suggestions.slice(0, 4);
       }
       default:
-        return [
-          "Look around carefully",
-          "Keep moving forward",
-          "Call out into the darkness",
-        ];
+        return ["Look around carefully", "Keep moving forward", "Call into the dark"];
     }
   }
 
   switch (state.currentScene) {
     case "courtyard":
-      return [
-        "Inspect the boarded window",
-        "Check the clinic floor plan",
-        "Push through the service entrance",
+      return isLongMode(state)
+        ? [
+            "Inspect the broken window and explorer footage",
+            "Look for Nina's carved sign",
+            "Enter the treatment wing",
+          ]
+        : [
+            "Inspect the broken window and rope marks",
+            "Look for Nina's carved sign",
+            "Enter the treatment wing",
+          ];
+    case "clinic_hall": {
+      const suggestions = [
+        "Search the hall for altered room signs",
+        "Listen for Nina's recording",
       ];
-    case "clinic_hall":
-      return [
-        "Search the corridor for the infirmary door",
-        "Ask about the night shift",
-        "Move toward the marked infirmary room",
-      ];
+      if (isLongMode(state) && !state.flags.memory_trigger_found) {
+        suggestions.push("Steady yourself and follow the familiar smell");
+      } else {
+        suggestions.push("Move toward the treatment rooms");
+      }
+      return suggestions;
+    }
     case "infirmary":
       if (!state.flags.night_shift_log_found) {
         return [
-          "Search the nurse's desk",
-          "Read the medical records",
-          "Look for the quarantine keycard",
+          "Search the locked desk",
+          "Read the treatment paperwork",
+          "Look for the deeper-room keycard",
         ];
       }
       if (!state.flags.infirmary_transfer_route_found) {
         return [
-          "Cross-check the ward map and the ledger",
-          "Trace how the infirmary prepared students for transfer",
-          "Look for hidden movement routes",
+          "Compare the ledger and room numbers",
+          "Trace the route deeper inside",
+          "Look for the hidden underground access",
+        ];
+      }
+      if (isLongMode(state) && !state.flags.nina_mark_sequence_found) {
+        return [
+          "Reconstruct Nina's repeated marks",
+          "Compare doorframe notches and chart edges",
+          "Look for the full hidden sequence",
         ];
       }
       return [
-        "Go to the quarantine room",
-        "Leave now with the medical evidence",
-        "Review the transfer pattern before moving deeper",
+        "Go to the hidden treatment core",
+        "Leave now with Nina's ledger",
+        "Review the route before moving deeper",
       ];
     case "quarantine_room": {
       const suggestions: string[] = [];
       if (!state.flags.night_transfer_schedule_found) {
-        suggestions.push("Look for a night transfer schedule");
+        suggestions.push("Look for Nina's night log");
       }
       if (!state.flags.sedation_protocol_found) {
-        suggestions.push("Search for sedation instructions");
+        suggestions.push("Search for the hormone dosing protocol");
       }
       if (!state.flags.training_manual_found) {
-        suggestions.push("Look for a staff training manual");
+        suggestions.push("Look for Ethan's directive manual");
       }
       if (!state.flags.dosage_variance_found) {
-        suggestions.push("Compare sealed dosage sheets");
+        suggestions.push("Compare the stability rating sheets");
       }
       if (!state.flags.incident_photo_found) {
-        suggestions.push("Search for incident photos or hidden visual records");
+        suggestions.push("Search for the old sample photo");
       }
-      if (infirmaryClueCount(state) >= 3) {
-        suggestions.push("Compare the records and expose the full ward program");
+      if (isLongMode(state) && !state.flags.release_record_found) {
+        suggestions.push("Look for the release approval file");
+      }
+      if (isLongMode(state) && state.flags.release_record_found && !state.flags.escape_log_found) {
+        suggestions.push("Search Ethan's escape incident log");
+      }
+      if (
+        infirmaryClueCount(state) >= (isLongMode(state) ? 4 : 3) &&
+        (!isLongMode(state) || (state.flags.release_record_found && state.flags.escape_log_found))
+      ) {
+        suggestions.push("Compare the sample sheets and check the release record");
       }
       suggestions.push("Escape with the records you have");
       return suggestions.slice(0, 4);
     }
     default:
-      return [
-        "Look around carefully",
-        "Keep moving forward",
-        "Call out into the darkness",
-      ];
+      return ["Look around carefully", "Keep moving forward", "Call into the dark"];
   }
 }
 
 function getScenarioLore(state: GameState) {
   if (state.scenario === "infirmary_case") {
     return `
-Core hidden truth for Infirmary Night Shift:
-- Students with panic attacks, self-harm signs, disciplinary labels, or reputational risk were reclassified as observation or quarantine cases.
-- They were sedated, isolated, removed from public logs, and transferred before dawn to partner wards or off-book supervision.
-- The hidden program was framed as resilience optimization, crisis control, and staff training, but in practice it became behavior control and coercive experimentation.
-- The horror comes from rigid training, staffing pressure, liability fear, silence, and a culture that treated strict control as professionalism.
+Core hidden truth for the Wellness Center route:
+- Student Wellness Center was presented as emotional support and recovery space, but in practice it filtered students into a hidden Helix hormone experiment.
+- Nina noticed that students kept entering deeper rooms and never returning, so she left marks, repeated numbers, and frightened notes for anyone who might come later.
+- Ethan ran the system through treatment language, isolation, and authority overrides.
+- The player is not only an investigator. The player was once one of the rare successful samples marked for release and continued observation.
+- Current pacing mode: ${state.gameMode}.
+- In long mode, route reconstruction, memory pressure, and identity evidence should arrive in separate beats rather than collapsing into one reveal.
 - If the truth is uncovered, explain cause, process, and result clearly:
-  cause = institutional pressure, strict training, risk management logic;
-  process = reclassification, sedation, isolation, transfer;
-  result = students disappeared into a punitive medical system.
+  cause = institutional ambition, control, Helix partnership, fear of exposure;
+  process = treatment intake, hormone intervention, sample scoring, record erasure, fire cleanup;
+  result = missing students were turned into experimental data, and the player returns as living proof.
 `;
   }
 
   return `
-Core hidden truth for Basement Case File:
-- Students marked unstable, disruptive, politically inconvenient, or reputationally risky were quietly relabeled in disciplinary paperwork.
-- They were routed through infirmary observation, sedated when necessary, then moved by service elevator and after-hours transport to a private behavior lab.
-- The hidden program measured obedience, stress tolerance, emotional suppression, and institutional compliance while being justified as safety, order, and campus stability.
-- The adults involved rationalized the system through ranking pressure, school image, administrative fear, and the belief that discipline could solve instability.
+Core hidden truth for the main campus route:
+- Students disappeared only after their names, files, and class evidence had already been altered in the school system.
+- Lucas discovered the archive route, the hidden wall, and the underground treatment core before the fire, and left fragments behind.
+- St. Alden worked with Helix Juvenile Development Institute to run an illegal hormone experiment on students, keeping successful samples and disposing of failures.
+- Ethan believed one successful sample died during escape, but that subject is the player.
+- Current pacing mode: ${state.gameMode}.
+- In long mode, route reconstruction, memory pressure, and identity evidence should arrive in separate beats rather than collapsing into one reveal.
 - If the truth is uncovered, explain cause, process, and result clearly:
-  cause = performance pressure, administrative fear, reputation management;
-  process = file manipulation, sedation, hidden transfer, basement routing;
-  result = students disappeared into a coercive behavior-control program.
+  cause = institutional greed, sample research, reputational fear, and planned concealment;
+  process = file rewriting, treatment transfer, underground testing, evidence purge, fire cleanup;
+  result = the missing-student case becomes an erased experiment, and the player becomes the strongest surviving evidence.
 `;
 }
 
@@ -211,6 +268,7 @@ Required JSON format:
 }
 Current world: ${state.world}
 Current scenario: ${state.scenario}
+Current mode: ${state.gameMode}
 Current scene: ${state.currentScene}
 Game finished: ${state.isFinished ? "yes" : "no"}
 Turn count: ${state.turnCount}
@@ -239,18 +297,19 @@ Scenario lore and thematic frame:
 ${getScenarioLore(state)}
 
 Rules:
-- Do not invent dice results
-- Do not change character stats
-- Follow the dice result if given
-- Follow the system update strictly
-- If the system update says progress was made, make that progress obvious in the narration
-- Build story logic with cause, process, and consequence
-- Before the final truth is uncovered, reveal only what the current evidence and scene can support
-- When the player already has partial evidence, let further exploration produce new corroborating details rather than repeating the same clue
-- If the game is finished, give a clear ending beat, not a vague fade-out
-- npcReply can be an empty string if no NPC is speaking
-- suggestedActions should contain 3 short action options unless the game is finished
-- If can end session now is yes and the game is not finished, one suggested action can be about ending the session and compiling a report
+- Do not invent dice results.
+- Do not change character stats.
+- Follow the dice result if given.
+- Follow the system update strictly.
+- Make the place feel like a burned school and hidden treatment complex, not a generic haunted house.
+- Use Lucas, Nina, Ethan, Student Wellness Center, and Helix only when the current evidence supports it.
+- Before the final reveal, imply the player's familiarity through atmosphere and fragmentary memory, not through full exposition.
+- If the final truth is uncovered, clearly state that the player was one of the rare successful samples.
+- Build story logic with cause, process, and consequence.
+- In long mode, do not compress multiple major evidence beats into one action. Let route reconstruction, corroboration, and identity evidence arrive separately.
+- npcReply can be an empty string if no one is speaking.
+- suggestedActions should contain 3 short action options unless the game is finished.
+- If can end session now is yes and the game is not finished, one suggested action can be about ending the session and compiling a report.
 `;
 }
 
@@ -267,6 +326,7 @@ Required JSON format:
 }
 World: ${state.world}
 Scenario: ${state.scenario}
+Mode: ${state.gameMode}
 Final scene: ${state.currentScene}
 Turn count: ${state.turnCount}
 Danger: ${state.danger}/${state.maxDanger}
@@ -279,104 +339,60 @@ Flags: ${
   }
 Story log:
 ${state.log.map((m) => `${m.role}: ${m.text}`).join("\n")}
-
 Scenario lore and thematic frame:
 ${getScenarioLore(state)}
-
 Rules:
-- outcome should be truth_found if the truth was uncovered
-- outcome should be extracted if the player left early with useful evidence
-- outcome should be overwhelmed if danger forced the player out or the final push failed without enough evidence
-- storySummary should be around 140 to 220 words
-- storySummary must include concrete cause, process, and result
-- If supported by the story log, explain how students were transferred
-- If supported by the story log, explain what the hidden program was doing
-- If supported by the story log, include at least two corroborating details, not just one main reveal
-- End with 1 to 2 sentences of reflection about a real institutional problem the story points toward
-- keyFindings should be concise, concrete, and specific
+- outcome should be truth_found if the truth was uncovered.
+- outcome should be extracted if the player left early with useful evidence.
+- outcome should be overwhelmed if danger forced the player out or the final push failed without enough proof.
+- storySummary should be around 140 to 220 words.
+- storySummary must include concrete cause, process, and result.
+- If supported by the log, explain how St. Alden and Helix worked together.
+- If supported by the log, include Nina or Lucas as corroborating witnesses.
+- If supported by the log, explicitly mention that the player was one of the rare successful samples.
+- End with 1 to 2 sentences of reflection about institutional abuse, datafication, or memory erasure.
+- keyFindings should be concise, concrete, and specific.
 `;
 }
 
 function getFallbackSummary(state: GameState): SessionSummary {
   if (state.flags.truth_found) {
-    if (state.scenario === "infirmary_case") {
-      return {
-        title: "The Ward Was Not for Healing",
-        outcome: "truth_found",
-        storySummary:
-          "The investigation reached the quarantine room and uncovered the full logic of the infirmary system. Students marked as panicked, noncompliant, self-harming, or reputationally risky were first logged as ordinary cases, then reclassified into restricted observation. Night schedules, dosage sheets, staff manuals, and incident records show they were sedated, isolated, and transferred before dawn into partner wards under off-book supervision. The so-called resilience program was less about treatment than about compliance, silence, and administrative risk control. What makes the case disturbing is not only the cruelty, but how ordinary it became inside a culture of rigid training, understaffing, and fear of liability. The ending points toward a real question: when institutions treat control as professionalism, how quickly can care become a tool of harm?",
-        keyFindings: [
-          "Students were reclassified, sedated, and transferred before dawn",
-          "The ward ran a compliance-focused resilience program",
-          "Staff pressure and institutional fear helped normalize abuse",
-        ],
-      };
-    }
-
     return {
-      title: "The Basement Took the Disappeared",
+      title: "The School Remembered You Back",
       outcome: "truth_found",
       storySummary:
-        "The investigation uncovered a hidden disciplinary pipeline beneath the school. Students marked unstable, defiant, or dangerous to the school's reputation were quietly rewritten in the files, routed through infirmary observation, and transferred by service elevator into a private behavior lab. Freight manifests, restraint packets, partner contracts, family complaints, and internal memos show that the program measured obedience, stress tolerance, and emotional suppression while being framed as safety and institutional order. The horror lies not only in the transport itself, but in how procedure made it appear lawful. Rankings, school image, and fear of disorder became excuses for reducing students to manageable cases. The case raises a broader issue that feels uncomfortably real: how often do systems call violence necessary once it can be filed, scored, and justified as protection?",
-        keyFindings: [
-          "Files were altered before students disappeared",
-          "A basement transfer route linked infirmary intake to private detention",
-          "The hidden program studied obedience under institutional pressure",
-        ],
-      };
-    }
+        "The investigation proved that St. Alden Residential Academy was not only covering up missing students. It was working with Helix Juvenile Development Institute to run an illegal hormone experiment under the language of treatment and student support. Lucas's route fragments, Nina's hidden notes, and the surviving treatment records show a clear process: students were selected, dosed, evaluated for stability, and then either preserved as successful samples or erased as failures. The fire served as a final purge of evidence rather than a simple tragedy. The deepest records reveal the most personal truth of all: the player was once one of the rare successful samples marked for release and long-term observation, and Ethan believed that subject died during escape. What returns to the school is not just an investigator but living proof that the system worked and failed at once. The case points to a broader problem beyond horror fiction: institutions can hide extraordinary violence inside paperwork, treatment language, and controlled memory.",
+      keyFindings: [
+        "St. Alden and Helix used students as hormone experiment samples",
+        "Lucas and Nina left independent traces that corroborated the cover-up",
+        "The player was identified as a surviving successful sample",
+      ],
+    };
+  }
 
   if (state.flags.overwhelmed || state.flags.hp_depleted) {
-    if (state.scenario === "infirmary_case") {
-      return {
-        title: "Fragments from the Night Shift",
-        outcome: "overwhelmed",
-        storySummary:
-          "The player did not get every sealed record out of the infirmary wing, but the surviving evidence still sketches the system's shape. Public charts and hidden logs did not match. Students were logged one way for display and another way for transfer. Night schedules, dosage discrepancies, or training material suggest the quarantine process mixed sedation, restraint, and selective disappearance under medical language. Even without the final proof, the ward no longer reads like a place of treatment. It reads like a machine built under training pressure and administrative fear, where overwork and obedience turned care into confinement.",
-        keyFindings: [
-          "Public case logs and hidden records did not match",
-          "The infirmary used controlled night transfers",
-          "The full protocol was not recovered before collapse",
-        ],
-      };
-    }
-
     return {
-      title: "The Paper Trail Broke Underground",
+      title: "Fragments Beneath St. Alden",
       outcome: "overwhelmed",
       storySummary:
-        "The player was forced out before every basement record could be secured, but the pattern is still visible. Disciplinary files were rewritten, students were routed away from public oversight, and the basement served as the quiet hinge between school administration and off-book transfer. Even partial supporting records suggest disappearance here was procedural rather than accidental. That is the unsettling part: the system did not need open chaos to harm people. It needed paperwork, pressure, and adults willing to treat reputation as more urgent than care.",
-        keyFindings: [
-          "Disciplinary paperwork was part of the concealment",
-          "The basement connected the school to hidden transfers",
-          "The final proof remained sealed when the retreat began",
-        ],
-      };
-    }
-
-  if (state.scenario === "infirmary_case") {
-    return {
-      title: "The Ledger Left the Ward",
-      outcome: "extracted",
-      storySummary:
-        "The player left the infirmary wing with enough evidence to reconstruct a partial truth. The ledger and supporting records show that students did not simply vanish after treatment. They were reclassified, isolated, and prepared for transfer through a restricted medical route. Even without opening every sealed file, the story already points to a system where administrative risk, rigid training, and the demand for orderly care fused into coercive practice. The case remains unfinished, but it leaves behind a difficult real-world question: when care workers are pressured to prioritize control, what forms of quiet violence become thinkable?",
+        "The player did not leave St. Alden with the full final chain, but the surviving evidence still sketches the structure of the crime. Erased student files, treatment records, and underground sample traces show that the school was hiding something much larger than a few unexplained disappearances. Lucas had already begun mapping the hidden route, and Nina had already started leaving warnings that students entered deeper rooms and failed to return. Even without the final terminal or release record, the pattern is visible: treatment language was used to sort, control, and erase students in cooperation with Helix. The school fire now reads less like isolated disaster and more like a coordinated cleanup. The unfinished ending still leaves a sharp institutional question behind: once a system learns to call abuse therapy and erasure administration, how much proof is required before anyone believes the missing were deliberately made to vanish?",
       keyFindings: [
-        "The ledger proved hidden reclassification of students",
-        "Night-shift procedures prepared selected cases for transfer",
-        "The ward's violence was systemic rather than accidental",
+        "Student records were altered before or after disappearance",
+        "Independent traces from Lucas and Nina point to the same hidden system",
+        "The final proof remained sealed when the run collapsed",
       ],
     };
   }
 
   return {
-    title: "The Folder Came Up from the Archive",
+    title: "Evidence Carried Out of the Fire",
     outcome: "extracted",
     storySummary:
-      "The player withdrew with enough evidence to show that the disappearance was not random. The archive folder and transfer materials suggest a managed route from school discipline to basement handling, with records altered before students left public view. The full program remained partially hidden, but the pattern is already clear: institutional fear and performance pressure were turned into procedure, and procedure became cover for harm. The case does not end with total proof, yet it still leaves a sharp question behind: what kinds of abuse become normal once a system learns to call them necessary for order?",
+      "The player withdrew from St. Alden before forcing the final reveal, but not empty-handed. The recovered dossier or ledger shows that the missing-student case was structured rather than random: names were revised, treatment routes were hidden, and deeper access depended on keycards, marks, and after-hours handling. Lucas and Nina's traces make the same point from different edges of the system. One was a student who kept noticing that the numbers no longer matched reality. The other was a frightened insider who could not say everything aloud but still tried to leave a path. The final shape of the Helix experiment remains partially buried, yet the evidence already suggests the fire served the purpose of concealment as much as destruction. The ending points toward a real institutional danger: once vulnerable people become data points inside a protected system, the line between care, control, and disposal can collapse with terrifying ease.",
     keyFindings: [
-      "Archive files documented a hidden transfer pipeline",
-      "Students were administratively erased before movement",
-      "The school used procedure to normalize coercion",
+      "The school concealed a structured route behind missing students",
+      "Lucas and Nina independently documented the same hidden pattern",
+      "The fire appears tied to evidence destruction, not only catastrophe",
     ],
   };
 }
@@ -425,10 +441,7 @@ async function generateSummary(state: GameState) {
 export async function POST(req: Request) {
   try {
     if (!process.env.DEEPSEEK_API_KEY) {
-      return NextResponse.json(
-        { error: "Missing DEEPSEEK_API_KEY" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Missing DEEPSEEK_API_KEY" }, { status: 500 });
     }
 
     const { state, action, phase = "resolve", rollResult }: ActionRequest = await req.json();
@@ -437,9 +450,7 @@ export async function POST(req: Request) {
       const check = analyzeAction(action, state.currentScene);
 
       if (!check.requiresRoll || !check.skill) {
-        return NextResponse.json({
-          requiresRoll: false,
-        });
+        return NextResponse.json({ requiresRoll: false });
       }
 
       const previewRoll = resolveAction(state.character, action, state.currentScene);
@@ -458,10 +469,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const finalRollResult =
-      rollResult ??
-      resolveAction(state.character, action, state.currentScene);
-
+    const finalRollResult = rollResult ?? resolveAction(state.character, action, state.currentScene);
     const logic = applyGameLogic(state, action, finalRollResult);
 
     const completion = await ai.chat.completions.create({
@@ -473,12 +481,7 @@ export async function POST(req: Request) {
         },
         {
           role: "user",
-          content: buildNarrationPrompt(
-            logic.state,
-            action,
-            finalRollResult,
-            logic.logicNote
-          ),
+          content: buildNarrationPrompt(logic.state, action, finalRollResult, logic.logicNote),
         },
       ],
       response_format: { type: "json_object" },
@@ -498,17 +501,14 @@ export async function POST(req: Request) {
       parsed = JSON.parse(content);
     } catch {
       parsed = {
-        narration: "The silence thickens, but the route ahead becomes morally clearer as the case takes shape.",
+        narration:
+          "The school yields another fragment, and the shape of the case becomes harder to deny.",
         npcReply: "",
         suggestedActions: getSceneSuggestions(logic.state),
       };
     }
 
-    const rollSystemMessage = buildRollSystemMessage(
-      action,
-      logic.state,
-      finalRollResult
-    );
+    const rollSystemMessage = buildRollSystemMessage(action, logic.state, finalRollResult);
 
     const newState: GameState = {
       ...logic.state,
@@ -518,9 +518,7 @@ export async function POST(req: Request) {
         { role: "player", text: action },
         ...(rollSystemMessage ? [rollSystemMessage] : []),
         { role: "narrator", text: parsed.narration || "" },
-        ...(parsed.npcReply
-          ? ([{ role: "npc", text: parsed.npcReply }] as const)
-          : []),
+        ...(parsed.npcReply ? ([{ role: "npc", text: parsed.npcReply }] as const) : []),
       ],
     };
 
@@ -528,9 +526,7 @@ export async function POST(req: Request) {
       newState.summary = await generateSummary(newState);
     }
 
-    const baseSuggestions = newState.isFinished
-      ? []
-      : parsed.suggestedActions || [];
+    const baseSuggestions = newState.isFinished ? [] : parsed.suggestedActions || [];
     const sceneSuggestions = newState.isFinished ? [] : getSceneSuggestions(newState);
     const canExtractNow = !newState.isFinished && canEndSession(newState);
 
@@ -552,9 +548,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("ACTION_ROUTE_ERROR:", error);
-    return NextResponse.json(
-      { error: "Failed to process game action" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to process game action" }, { status: 500 });
   }
 }

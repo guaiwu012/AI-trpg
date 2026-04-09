@@ -1,7 +1,7 @@
 export type Role = "detective" | "hacker" | "priest";
 export type Skill = "observation" | "persuasion" | "willpower";
-
 export type ScenarioId = "basement_case" | "infirmary_case";
+export type GameMode = "short" | "long";
 
 export type SceneId =
   | "gate"
@@ -40,11 +40,7 @@ export type Character = {
   inventory: string[];
 };
 
-export type SummaryOutcome =
-  | "extracted"
-  | "truth_found"
-  | "overwhelmed"
-  | "unfinished";
+export type SummaryOutcome = "extracted" | "truth_found" | "overwhelmed" | "unfinished";
 
 export type SessionSummary = {
   title: string;
@@ -57,6 +53,7 @@ export type GameState = {
   sessionId: string;
   world: string;
   scenario: ScenarioId;
+  gameMode: GameMode;
   currentScene: SceneId;
   character: Character;
   flags: Record<string, boolean>;

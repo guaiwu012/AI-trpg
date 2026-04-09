@@ -3,15 +3,7 @@
 import { CSSProperties, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { DiceResult, GameState } from "@/types/game";
-
-type SceneId = GameState["currentScene"];
-
-type ProgressInfo = {
-  percent: number;
-  label: string;
-  detail: string;
-  eta: string;
-};
+import { getStoryImageConfig } from "@/lib/storyImages";
 
 type PendingCheck = {
   action: string;
@@ -22,249 +14,28 @@ type PendingCheck = {
   rollResult: DiceResult;
 };
 
-const objectiveMap: Record<SceneId, string> = {
-  gate: "Find the first trace of how students were taken off the visible route.",
-  hallway: "Locate the archive corridor and learn who controlled records at night.",
-  archive: "Secure the first hard evidence, then reconstruct how the transfer route worked.",
-  basement: "Collect corroborating proof of the basement program before forcing the final reveal.",
-  courtyard: "Find the hidden way into the infirmary wing and why it was used after hours.",
-  clinic_hall: "Identify the infirmary route and how night-shift handling differed from day records.",
-  infirmary: "Secure the ledger, then work out how the ward prepared students for transfer.",
-  quarantine_room: "Collect corroborating proof of the night-shift program before exposing the full system.",
+type ProgressInfo = {
+  percent: number;
+  label: string;
+  detail: string;
+  eta: string;
 };
 
-const sceneLabelMap: Record<SceneId, string> = {
-  gate: "Outer Gate",
-  hallway: "Dark Hallway",
-  archive: "Archive Room",
-  basement: "Basement Level",
-  courtyard: "Courtyard",
-  clinic_hall: "Clinic Hall",
-  infirmary: "Infirmary",
-  quarantine_room: "Quarantine Room",
+type DieTilt = {
+  rotateX: number;
+  rotateY: number;
+  rotateZ: number;
+  y: number;
+  scale: number;
 };
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeGameState(raw: GameState | null | undefined): GameState | null {
-  if (!raw) return null;
-
-  const safeMaxDanger =
-    Number.isFinite(Number(raw.maxDanger)) && Number(raw.maxDanger) > 0
-      ? Number(raw.maxDanger)
-      : 10;
-
-  const safeDanger = clamp(Number(raw.danger) || 0, 0, safeMaxDanger);
-  const safeHp = Math.max(0, Number(raw.character?.hp) || 0);
-
-  const inventory = Array.isArray(raw.character?.inventory)
-    ? [...raw.character.inventory]
-    : [];
-
-  const reconcile: Record<string, string> = {
-    quarantine_unlocked: "Quarantine Keycard",
-    basement_unlocked: "Basement Passcard",
-    evidence_folder_found: "Evidence Folder",
-    night_shift_log_found: "Medical Ledger",
-    transfer_manifest_found: "Transfer Manifest",
-    restraint_protocol_found: "Restraint Protocol",
-    partner_contract_found: "Partner Contract",
-    parent_letter_found: "Parent Letter",
-    ethics_memo_found: "Ethics Memo",
-    night_transfer_schedule_found: "Night Transfer Schedule",
-    sedation_protocol_found: "Sedation Protocol",
-    training_manual_found: "Training Manual",
-    dosage_variance_found: "Dosage Variance Sheet",
-    incident_photo_found: "Incident Photo",
-  };
-
-  for (const [flag, item] of Object.entries(reconcile)) {
-    if (raw.flags?.[flag] && !inventory.includes(item)) {
-      inventory.push(item);
-    }
-  }
-
-  return {
-    ...raw,
-    danger: safeDanger,
-    maxDanger: safeMaxDanger,
-    flags: raw.flags || {},
-    log: Array.isArray(raw.log) ? raw.log : [],
-    character: {
-      ...raw.character,
-      hp: safeHp,
-      inventory,
-    },
-  };
-}
-
-function formatFlagLabel(flag: string) {
-  const labelMap: Record<string, string> = {
-    found_gate_clue: "Gate clue found",
-    found_courtyard_clue: "Courtyard clue found",
-    archive_hint: "Archive location confirmed",
-    archive_unlocked: "Archive lead obtained",
-    basement_unlocked: "Basement access unlocked",
-    evidence_found: "Evidence secured",
-    evidence_folder_found: "Evidence folder secured",
-    truth_found: "Truth uncovered",
-    overwhelmed: "Forced withdrawal",
-    extracted_alive: "Escaped alive",
-    escaped_with_evidence: "Escaped with evidence",
-    infirmary_hint: "Infirmary clue found",
-    infirmary_unlocked: "Infirmary desk lead found",
-    quarantine_unlocked: "Quarantine access unlocked",
-    night_shift_log_found: "Night shift log secured",
-    hp_depleted: "Collapsed from injury",
-    basement_transfer_route_found: "Archive transfer route reconstructed",
-    basement_experiment_found: "Basement program identified",
-    infirmary_transfer_route_found: "Ward transfer route reconstructed",
-    infirmary_experiment_found: "Ward program identified",
-    systemic_pressure_found: "Institutional motive identified",
-    transfer_manifest_found: "Transfer manifest recovered",
-    restraint_protocol_found: "Restraint protocol recovered",
-    partner_contract_found: "Partner contract recovered",
-    parent_letter_found: "Parent complaint letter recovered",
-    ethics_memo_found: "Ethics and reputation memo recovered",
-    night_transfer_schedule_found: "Night transfer schedule recovered",
-    sedation_protocol_found: "Sedation protocol recovered",
-    training_manual_found: "Training manual recovered",
-    dosage_variance_found: "Dosage variance sheet recovered",
-    incident_photo_found: "Incident photo recovered",
-  };
-
-  return labelMap[flag] || flag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function getObjective(scene: SceneId) {
-  return objectiveMap[scene];
-}
-
-function getSceneLabel(scene: SceneId) {
-  return sceneLabelMap[scene];
-}
-
-function canEndRun(state: GameState) {
-  return Boolean(
-    state.flags.evidence_found ||
-      state.flags.evidence_folder_found ||
-      state.flags.night_shift_log_found ||
-      state.flags.truth_found ||
-      state.flags.escaped_with_evidence ||
-      state.currentScene === "basement" ||
-      state.currentScene === "quarantine_room"
-  );
-}
-
-function getProgressInfo(state: GameState): ProgressInfo {
-  let progress = 0;
-
-  if (state.scenario === "basement_case") {
-    const corroborationCount = [
-      "transfer_manifest_found",
-      "restraint_protocol_found",
-      "partner_contract_found",
-      "parent_letter_found",
-      "ethics_memo_found",
-    ].filter((flag) => state.flags[flag]).length;
-
-    if (state.flags.found_gate_clue) progress = Math.max(progress, 10);
-    if (state.flags.archive_hint || state.flags.archive_unlocked) progress = Math.max(progress, 20);
-    if (state.flags.evidence_folder_found) progress = Math.max(progress, 35);
-    if (state.flags.basement_transfer_route_found) progress = Math.max(progress, 50);
-
-    if (corroborationCount >= 1) progress = Math.max(progress, 60);
-    if (corroborationCount >= 2) progress = Math.max(progress, 70);
-    if (corroborationCount >= 3) progress = Math.max(progress, 80);
-    if (corroborationCount >= 4) progress = Math.max(progress, 88);
-    if (corroborationCount >= 5) progress = Math.max(progress, 92);
-
-    if (state.flags.basement_experiment_found) progress = Math.max(progress, 95);
-  } else {
-    const corroborationCount = [
-      "night_transfer_schedule_found",
-      "sedation_protocol_found",
-      "training_manual_found",
-      "dosage_variance_found",
-      "incident_photo_found",
-    ].filter((flag) => state.flags[flag]).length;
-
-    if (state.flags.found_courtyard_clue) progress = Math.max(progress, 10);
-    if (state.flags.infirmary_hint || state.flags.infirmary_unlocked) progress = Math.max(progress, 20);
-    if (state.flags.night_shift_log_found) progress = Math.max(progress, 35);
-    if (state.flags.infirmary_transfer_route_found) progress = Math.max(progress, 50);
-
-    if (corroborationCount >= 1) progress = Math.max(progress, 60);
-    if (corroborationCount >= 2) progress = Math.max(progress, 70);
-    if (corroborationCount >= 3) progress = Math.max(progress, 80);
-    if (corroborationCount >= 4) progress = Math.max(progress, 88);
-    if (corroborationCount >= 5) progress = Math.max(progress, 92);
-
-    if (state.flags.infirmary_experiment_found) progress = Math.max(progress, 95);
-  }
-
-  if (
-    state.flags.truth_found ||
-    state.flags.escaped_with_evidence ||
-    state.flags.extracted_alive ||
-    state.flags.overwhelmed ||
-    state.flags.hp_depleted ||
-    state.isFinished
-  ) {
-    progress = 100;
-  }
-
-  const label =
-    progress >= 100
-      ? "Case closed"
-      : progress >= 95
-      ? "Full chain reconstructed"
-      : progress >= 80
-      ? "Corroborating the truth"
-      : progress >= 50
-      ? "Transfer route established"
-      : progress >= 35
-      ? "Core evidence found"
-      : progress >= 20
-      ? "Following the route"
-      : progress >= 10
-      ? "Opening investigation"
-      : "Just started";
-
-  const detail =
-    progress >= 100
-      ? "This run has reached an ending."
-      : progress >= 80
-      ? "You already know the case structure. Keep digging for corroborating proof before forcing the final reveal."
-      : progress >= 50
-      ? "You now understand the transfer chain. Further exploration should reveal motive, method, and institutional pressure."
-      : progress >= 35
-      ? "You have the first hard evidence, but not yet the full route or system behind it."
-      : progress >= 20
-      ? "You have found where the case opens up, but not yet how the hidden route really works."
-      : progress >= 10
-      ? "You have found the first sign that something hidden is operating here."
-      : "You are still at the beginning of the investigation.";
-
-  const eta =
-    progress >= 100
-      ? "Finished"
-      : progress >= 95
-      ? "About 1-2 more actions"
-      : progress >= 80
-      ? "About 3-5 more actions"
-      : progress >= 50
-      ? "About 5-8 more actions"
-      : progress >= 35
-      ? "About 7-10 more actions"
-      : progress >= 20
-      ? "About 9-12 more actions"
-      : "About 12-16 more actions";
-
-  return { percent: progress, label, detail, eta };
-}
+type StoryImageEntry = {
+  key: string;
+  insertAfter: number;
+  src: string;
+  alt: string;
+  fileName: string;
+};
 
 const shellStyle: CSSProperties = {
   minHeight: "100vh",
@@ -281,6 +52,322 @@ const panelStyle: CSSProperties = {
   backdropFilter: "blur(10px)",
 };
 
+const initialDieTilt: DieTilt = {
+  rotateX: -10,
+  rotateY: 12,
+  rotateZ: -6,
+  y: 0,
+  scale: 1,
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeGameState(raw: GameState | null | undefined): GameState | null {
+  if (!raw) return null;
+
+  const safeMaxDanger =
+    Number.isFinite(Number(raw.maxDanger)) && Number(raw.maxDanger) > 0
+      ? Number(raw.maxDanger)
+      : 10;
+
+  const safeDanger = clamp(Number(raw.danger) || 0, 0, safeMaxDanger);
+  const safeHp = Math.max(0, Number(raw.character?.hp) || 0);
+  const inventory = Array.isArray(raw.character?.inventory) ? [...raw.character.inventory] : [];
+
+  const reconcile: Record<string, string> = {
+    quarantine_unlocked: "Treatment Keycard",
+    basement_unlocked: "Service Passcard",
+    evidence_folder_found: "Lucas Dossier",
+    night_shift_log_found: "Treatment Ledger",
+    transfer_manifest_found: "Lucas Route Fragment",
+    restraint_protocol_found: "Underground Restraint Protocol",
+    partner_contract_found: "Helix Cooperation Contract",
+    parent_letter_found: "Parent Complaint Letter",
+    ethics_memo_found: "Cleanup and Fire Memo",
+    night_transfer_schedule_found: "Nina Night Log",
+    sedation_protocol_found: "Hormone Dosing Protocol",
+    training_manual_found: "Ethan Directive Manual",
+    dosage_variance_found: "Stability Rating Sheet",
+    incident_photo_found: "Sample Photo",
+    lucas_map_completed: "Completed Lucas Map",
+    nina_mark_sequence_found: "Nina Mark Sequence",
+    memory_trigger_found: "Recovered Memory Fragment",
+    release_record_found: "Release Approval File",
+    escape_log_found: "Escape Incident Log",
+  };
+
+  for (const [flag, item] of Object.entries(reconcile)) {
+    if (raw.flags?.[flag] && !inventory.includes(item)) {
+      inventory.push(item);
+    }
+  }
+
+  return {
+    ...raw,
+    gameMode: raw.gameMode || "short",
+    danger: safeDanger,
+    maxDanger: safeMaxDanger,
+    flags: raw.flags || {},
+    log: Array.isArray(raw.log) ? raw.log : [],
+    character: {
+      ...raw.character,
+      hp: safeHp,
+      inventory,
+    },
+  };
+}
+
+function getSceneLabel(state: GameState) {
+  const labels: Record<string, string> = {
+    gate: "Ruined Main Entrance",
+    hallway: "Burned School Corridor",
+    archive: "Archive of Erased Students",
+    basement: "Underground Treatment Core",
+    courtyard: "Wellness Courtyard",
+    clinic_hall: "Outer Treatment Hall",
+    infirmary: "Student Wellness Center",
+    quarantine_room: "Hidden Sample Wing",
+  };
+  return labels[state.currentScene] || state.currentScene;
+}
+
+function getObjective(state: GameState) {
+  if (state.scenario === "basement_case") {
+    switch (state.currentScene) {
+      case "gate":
+        return state.gameMode === "long"
+          ? "Confirm the explorer trace and establish your first route clue before committing to the school interior."
+          : "Find the first usable trace left by the explorer team, Nina, or Lucas.";
+      case "hallway":
+        return state.gameMode === "long"
+          ? "Follow the erased-school clues and stabilize the returning memory before opening the archive route."
+          : "Follow the erased-school clues until the archive route opens.";
+      case "archive":
+        return state.gameMode === "long"
+          ? "Secure Lucas's dossier, reconstruct the transfer route, and complete his hidden map before descending."
+          : "Secure Lucas's dossier, then reconstruct how the hidden descent worked.";
+      case "basement":
+        return state.gameMode === "long"
+          ? "Collect deeper corroboration, then recover both the release file and escape log before forcing the final reveal."
+          : "Collect corroborating proof of the underground experiment before forcing the final reveal.";
+      default:
+        return "Keep pressing deeper into the case.";
+    }
+  }
+
+  switch (state.currentScene) {
+    case "courtyard":
+      return state.gameMode === "long"
+        ? "Confirm the explorer trace and Nina's entry mark before committing to the treatment wing."
+        : "Find the hidden way into Student Wellness Center and identify Nina's marks.";
+    case "clinic_hall":
+      return state.gameMode === "long"
+        ? "Read the altered hall, steady the memory pressure, and open the path to the treatment rooms."
+        : "Work out how the treatment wing separated ordinary care from hidden processing.";
+    case "infirmary":
+      return state.gameMode === "long"
+        ? "Secure the ledger, trace the route deeper inside, and reconstruct Nina's full mark sequence."
+        : "Secure the treatment ledger, then trace how students were pushed deeper inside.";
+    case "quarantine_room":
+      return state.gameMode === "long"
+        ? "Collect deeper corroboration, then recover both the release file and escape log before exposing the full system."
+        : "Collect corroborating proof of the Helix program before exposing the full system.";
+    default:
+      return "Keep pressing deeper into the case.";
+  }
+}
+
+function canEndRun(state: GameState) {
+  return Boolean(
+    state.flags.evidence_found ||
+      state.flags.evidence_folder_found ||
+      state.flags.night_shift_log_found ||
+      state.flags.truth_found ||
+      state.flags.escaped_with_evidence ||
+      state.currentScene === "basement" ||
+      state.currentScene === "quarantine_room"
+  );
+}
+
+function getProgressInfo(state: GameState): ProgressInfo {
+  const isLong = state.gameMode === "long";
+  let progress = 0;
+
+  if (state.scenario === "basement_case") {
+    const corroborationCount = [
+      "transfer_manifest_found",
+      "restraint_protocol_found",
+      "partner_contract_found",
+      "parent_letter_found",
+      "ethics_memo_found",
+    ].filter((flag) => state.flags[flag]).length;
+
+    if (state.flags.found_gate_clue) progress = Math.max(progress, 8);
+    if (state.flags.archive_hint || state.flags.archive_unlocked) progress = Math.max(progress, 16);
+    if (state.flags.memory_trigger_found) progress = Math.max(progress, 24);
+    if (state.flags.evidence_folder_found) progress = Math.max(progress, isLong ? 32 : 38);
+    if (state.flags.basement_transfer_route_found) progress = Math.max(progress, isLong ? 42 : 52);
+    if (state.flags.lucas_map_completed) progress = Math.max(progress, 56);
+    if (corroborationCount >= 1) progress = Math.max(progress, isLong ? 62 : 64);
+    if (corroborationCount >= 2) progress = Math.max(progress, isLong ? 68 : 74);
+    if (corroborationCount >= 3) progress = Math.max(progress, isLong ? 74 : 84);
+    if (corroborationCount >= 4) progress = Math.max(progress, 82);
+    if (corroborationCount >= 5) progress = Math.max(progress, 88);
+    if (state.flags.release_record_found) progress = Math.max(progress, 92);
+    if (state.flags.escape_log_found) progress = Math.max(progress, 96);
+    if (state.flags.basement_experiment_found) progress = Math.max(progress, 98);
+  } else {
+    const corroborationCount = [
+      "night_transfer_schedule_found",
+      "sedation_protocol_found",
+      "training_manual_found",
+      "dosage_variance_found",
+      "incident_photo_found",
+    ].filter((flag) => state.flags[flag]).length;
+
+    if (state.flags.found_courtyard_clue) progress = Math.max(progress, 8);
+    if (state.flags.infirmary_hint || state.flags.infirmary_unlocked) progress = Math.max(progress, 16);
+    if (state.flags.memory_trigger_found) progress = Math.max(progress, 24);
+    if (state.flags.night_shift_log_found) progress = Math.max(progress, isLong ? 32 : 38);
+    if (state.flags.infirmary_transfer_route_found) progress = Math.max(progress, isLong ? 42 : 52);
+    if (state.flags.nina_mark_sequence_found) progress = Math.max(progress, 56);
+    if (corroborationCount >= 1) progress = Math.max(progress, isLong ? 62 : 64);
+    if (corroborationCount >= 2) progress = Math.max(progress, isLong ? 68 : 74);
+    if (corroborationCount >= 3) progress = Math.max(progress, isLong ? 74 : 84);
+    if (corroborationCount >= 4) progress = Math.max(progress, 82);
+    if (corroborationCount >= 5) progress = Math.max(progress, 88);
+    if (state.flags.release_record_found) progress = Math.max(progress, 92);
+    if (state.flags.escape_log_found) progress = Math.max(progress, 96);
+    if (state.flags.infirmary_experiment_found) progress = Math.max(progress, 98);
+  }
+
+  if (
+    state.flags.truth_found ||
+    state.flags.escaped_with_evidence ||
+    state.flags.extracted_alive ||
+    state.flags.overwhelmed ||
+    state.flags.hp_depleted ||
+    state.isFinished
+  ) {
+    progress = 100;
+  }
+
+  const label =
+    progress >= 100
+      ? "Case closed"
+      : progress >= 96
+      ? "Identity reveal imminent"
+      : progress >= 82
+      ? "Corroborating the buried truth"
+      : progress >= 56
+      ? "Hidden route established"
+      : progress >= 32
+      ? "Core evidence found"
+      : progress >= 16
+      ? "Following Lucas and Nina"
+      : "Just started";
+
+  const detail =
+    progress >= 100
+      ? "This run has reached an ending."
+      : progress >= 82
+      ? isLong
+        ? "You already understand the broad system. The last stretch is about identity evidence and final corroboration."
+        : "You already understand the broad shape of St. Alden's system. One more push should expose the final link."
+      : progress >= 56
+      ? "You now understand how the school, Wellness Center, and underground core connected."
+      : progress >= 32
+      ? "You have hard evidence, but not yet the full Helix chain or your place inside it."
+      : progress >= 16
+      ? "You have found where the hidden route opens, but not yet how the full system functioned."
+      : "You are still at the beginning of the investigation.";
+
+  const eta =
+    progress >= 100
+      ? "Finished"
+      : isLong
+      ? progress >= 96
+        ? "About 1-2 more actions"
+        : progress >= 82
+        ? "About 4-6 more actions"
+        : progress >= 56
+        ? "About 8-12 more actions"
+        : progress >= 32
+        ? "About 12-16 more actions"
+        : "About 18-24 more actions"
+      : progress >= 96
+      ? "About 1-2 more actions"
+      : progress >= 82
+      ? "About 3-5 more actions"
+      : progress >= 56
+      ? "About 5-8 more actions"
+      : progress >= 32
+      ? "About 7-10 more actions"
+      : "About 12-16 more actions";
+
+  return { percent: progress, label, detail, eta };
+}
+
+function getOutcomeLabel(outcome?: DiceResult["outcome"]) {
+  switch (outcome) {
+    case "great_success":
+      return "Great success";
+    case "success":
+      return "Success";
+    case "fail":
+    default:
+      return "Fail";
+  }
+}
+
+function formatFlagLabel(flag: string) {
+  const labelMap: Record<string, string> = {
+    found_gate_clue: "Entrance clue found",
+    found_courtyard_clue: "Courtyard clue found",
+    archive_hint: "Archive location confirmed",
+    archive_unlocked: "Treatment-system lead obtained",
+    basement_unlocked: "Service access unlocked",
+    evidence_found: "Core evidence secured",
+    evidence_folder_found: "Lucas dossier secured",
+    truth_found: "Truth uncovered",
+    overwhelmed: "Forced withdrawal",
+    extracted_alive: "Escaped alive",
+    escaped_with_evidence: "Escaped with evidence",
+    infirmary_hint: "Wellness Center clue found",
+    infirmary_unlocked: "Nina audio lead found",
+    quarantine_unlocked: "Treatment core access unlocked",
+    night_shift_log_found: "Treatment ledger secured",
+    hp_depleted: "Collapsed from injury",
+    basement_transfer_route_found: "Hidden descent reconstructed",
+    basement_experiment_found: "Underground experiment exposed",
+    infirmary_transfer_route_found: "Treatment route reconstructed",
+    infirmary_experiment_found: "Wellness Center experiment exposed",
+    systemic_pressure_found: "Institutional cover-up identified",
+    identity_revealed: "Player identity revealed",
+    ethan_contact: "Ethan recognized the player",
+    transfer_manifest_found: "Lucas route fragment recovered",
+    restraint_protocol_found: "Underground restraint protocol recovered",
+    partner_contract_found: "Helix contract recovered",
+    parent_letter_found: "Parent complaint letter recovered",
+    ethics_memo_found: "Fire cleanup memo recovered",
+    night_transfer_schedule_found: "Nina night log recovered",
+    sedation_protocol_found: "Hormone protocol recovered",
+    training_manual_found: "Ethan directive manual recovered",
+    dosage_variance_found: "Stability rating sheet recovered",
+    incident_photo_found: "Sample photo recovered",
+    explorer_video_found: "Explorer footage confirmed",
+    memory_trigger_found: "Recovered memory fragment",
+    lucas_map_completed: "Lucas map completed",
+    nina_mark_sequence_found: "Nina mark sequence completed",
+    release_record_found: "Release file recovered",
+    escape_log_found: "Escape log recovered",
+  };
+
+  return labelMap[flag] || flag.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
@@ -291,10 +378,13 @@ export default function GamePage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [pendingPlayerAction, setPendingPlayerAction] = useState("");
   const [pendingCheck, setPendingCheck] = useState<PendingCheck | null>(null);
   const [rolling, setRolling] = useState(false);
   const [displayRollValue, setDisplayRollValue] = useState<number | null>(null);
+  const [dieTilt, setDieTilt] = useState<DieTilt>(initialDieTilt);
+  const [dieGlow, setDieGlow] = useState(false);
+  const [imageTimeline, setImageTimeline] = useState<StoryImageEntry[]>([]);
+  const [trackedImageKey, setTrackedImageKey] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = sessionStorage.getItem(`game:${sessionId}`);
@@ -317,8 +407,12 @@ export default function GamePage() {
       try {
         const parsed = JSON.parse(savedUi);
         setSuggestions(Array.isArray(parsed.suggestions) ? parsed.suggestions : []);
+        setImageTimeline(Array.isArray(parsed.imageTimeline) ? parsed.imageTimeline : []);
+        setTrackedImageKey(typeof parsed.trackedImageKey === "string" ? parsed.trackedImageKey : null);
       } catch {
         setSuggestions([]);
+        setImageTimeline([]);
+        setTrackedImageKey(null);
       }
     }
 
@@ -335,16 +429,17 @@ export default function GamePage() {
   }, [state]);
 
   useEffect(() => {
-    sessionStorage.setItem(`game-ui:${sessionId}`, JSON.stringify({ suggestions }));
-  }, [sessionId, suggestions]);
+    sessionStorage.setItem(
+      `game-ui:${sessionId}`,
+      JSON.stringify({ suggestions, imageTimeline, trackedImageKey })
+    );
+  }, [sessionId, suggestions, imageTimeline, trackedImageKey]);
 
   async function finalizeAction(actionText: string, rollResult?: DiceResult) {
     if (!state || state.isFinished) return;
 
     try {
       setSending(true);
-      setPendingPlayerAction(actionText);
-
       const res = await fetch("/api/game/action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -367,11 +462,12 @@ export default function GamePage() {
       console.error(error);
       alert("Failed to process action.");
     } finally {
-      setPendingPlayerAction("");
       setSending(false);
       setPendingCheck(null);
       setRolling(false);
       setDisplayRollValue(null);
+      setDieTilt(initialDieTilt);
+      setDieGlow(false);
     }
   }
 
@@ -408,30 +504,49 @@ export default function GamePage() {
         rollResult: data.rollResult,
       });
       setDisplayRollValue(null);
+      setDieTilt(initialDieTilt);
+      setDieGlow(false);
     } catch (error) {
       console.error(error);
       alert("Failed to process action.");
     }
   }
 
-  async function rollPendingCheck() {
+  function rollPendingCheck() {
     if (!pendingCheck || rolling || sending) return;
 
     setRolling(true);
+    setDieGlow(false);
     let ticks = 0;
 
     const interval = window.setInterval(() => {
       setDisplayRollValue(Math.floor(Math.random() * 20) + 1);
+      setDieTilt({
+        rotateX: -18 + Math.random() * 36,
+        rotateY: -22 + Math.random() * 44,
+        rotateZ: -30 + Math.random() * 60,
+        y: -6 + Math.random() * 12,
+        scale: 0.94 + Math.random() * 0.24,
+      });
       ticks += 1;
 
-      if (ticks >= 14) {
+      if (ticks >= 18) {
         window.clearInterval(interval);
         setDisplayRollValue(pendingCheck.rollResult.raw);
+        setDieTilt({
+          rotateX: -8,
+          rotateY: 10,
+          rotateZ: 0,
+          y: -2,
+          scale: 1.08,
+        });
+        setDieGlow(true);
+        window.setTimeout(() => setDieGlow(false), 520);
         window.setTimeout(() => {
           finalizeAction(pendingCheck.action, pendingCheck.rollResult);
-        }, 450);
+        }, 900);
       }
-    }, 85);
+    }, 70);
   }
 
   const lastRoll = useMemo(() => state?.lastRoll, [state]);
@@ -439,9 +554,34 @@ export default function GamePage() {
     () => Object.keys(state?.flags || {}).filter((key) => state?.flags[key]),
     [state]
   );
-
   const canEndNow = Boolean(state && canEndRun(state));
   const progressInfo = useMemo(() => (state ? getProgressInfo(state) : null), [state]);
+  const storyImage = useMemo(() => (state ? getStoryImageConfig(state) : null), [state]);
+
+  useEffect(() => {
+    if (!hasCheckedStorage || !state || !storyImage) return;
+
+    const nextKey = storyImage.fileName;
+    if (trackedImageKey === nextKey && imageTimeline.length > 0) return;
+
+    const insertAfter = Math.max(state.log.length - 1, 0);
+    setImageTimeline((prev) => {
+      const alreadyExists = prev.some((entry) => entry.key === nextKey && entry.insertAfter === insertAfter);
+      if (alreadyExists) return prev;
+
+      return [
+        ...prev,
+        {
+          key: nextKey,
+          insertAfter,
+          src: storyImage.src,
+          alt: storyImage.alt,
+          fileName: storyImage.fileName,
+        },
+      ];
+    });
+    setTrackedImageKey(nextKey);
+  }, [hasCheckedStorage, state, storyImage, trackedImageKey, imageTimeline.length]);
 
   if (!hasCheckedStorage) {
     return (
@@ -488,770 +628,582 @@ export default function GamePage() {
 
   return (
     <main style={shellStyle}>
-      <style jsx>{`
-        @keyframes thinkingPulse {
-          0% { opacity: 0.28; transform: translateY(0); }
-          25% { opacity: 1; transform: translateY(-2px); }
-          50% { opacity: 0.5; transform: translateY(0); }
-          100% { opacity: 0.28; transform: translateY(0); }
-        }
-        @keyframes diceShake {
-          0% { transform: rotate(0deg) scale(1); }
-          20% { transform: rotate(-12deg) scale(1.04); }
-          40% { transform: rotate(10deg) scale(0.98); }
-          60% { transform: rotate(-8deg) scale(1.03); }
-          80% { transform: rotate(6deg) scale(0.99); }
-          100% { transform: rotate(0deg) scale(1); }
-        }
-        @keyframes messageFade {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .thinking-dots {
-          display: inline-flex;
-          gap: 6px;
-          align-items: center;
-        }
-        .thinking-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          background: #d6bc90;
-          animation: thinkingPulse 1.1s infinite ease-in-out;
-        }
-        .thinking-dot:nth-child(2) { animation-delay: 0.18s; }
-        .thinking-dot:nth-child(3) { animation-delay: 0.36s; }
-        .message-enter { animation: messageFade 0.18s ease-out; }
-        .dice-box {
-          width: 76px;
-          height: 76px;
-          border-radius: 18px;
-          border: 1px solid rgba(182, 154, 110, 0.2);
-          background: linear-gradient(180deg, rgba(52, 41, 31, 0.98) 0%, rgba(23, 18, 15, 0.98) 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #f4e8d2;
-          font-size: 30px;
-          font-weight: 700;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-        }
-        .dice-rolling {
-          animation: diceShake 0.45s infinite ease-in-out;
-        }
-      `}</style>
-
-      <div style={{ maxWidth: "1260px", margin: "0 auto", padding: "28px 24px 56px" }}>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.8fr) minmax(300px, 0.95fr)",
-            gap: "24px",
-            alignItems: "start",
-          }}
-        >
-          <section style={{ ...panelStyle, padding: "26px" }}>
-            <div
-              style={{
-                marginBottom: "22px",
-                paddingBottom: "18px",
-                borderBottom: "1px solid rgba(182, 154, 110, 0.12)",
-              }}
-            >
-              <p
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "28px 20px 40px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.8fr) minmax(320px, 0.9fr)", gap: "18px" }}>
+          <section style={{ ...panelStyle, padding: "22px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ letterSpacing: "0.16em", textTransform: "uppercase", color: "#b9a27b", fontSize: "0.86rem" }}>
+                  {state.world}
+                </div>
+                <h1 style={{ margin: "10px 0 8px", fontSize: "2rem", color: "#f5ebd6" }}>
+                  {state.character.name}
+                </h1>
+                <div style={{ color: "#d4c6b1", lineHeight: 1.7 }}>
+                  {state.character.role} · {state.scenario === "basement_case" ? "Main Campus Route" : "Wellness Center Route"} · {state.gameMode === "long" ? "Long Mode" : "Short Mode"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/create")}
                 style={{
-                  margin: "0 0 10px",
-                  color: "#b69a6e",
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  fontSize: "12px",
+                  padding: "10px 14px",
+                  borderRadius: "999px",
+                  border: "1px solid rgba(182, 154, 110, 0.24)",
+                  background: "rgba(15, 12, 11, 0.84)",
+                  color: "#f0e7d7",
+                  cursor: "pointer",
+                  height: "fit-content",
                 }}
               >
-                Short Session / Live Investigation
-              </p>
-              <h1 style={{ margin: "0 0 10px", fontSize: "34px", color: "#f3ecdc" }}>{state.world}</h1>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <span
-                  style={{
-                    padding: "7px 12px",
-                    borderRadius: "999px",
-                    border: "1px solid rgba(182, 154, 110, 0.18)",
-                    background: "rgba(77, 61, 42, 0.2)",
-                    color: "#e7dcc4",
-                    fontSize: "13px",
-                  }}
-                >
-                  Scene: {getSceneLabel(state.currentScene)}
-                </span>
-                <span
-                  style={{
-                    padding: "7px 12px",
-                    borderRadius: "999px",
-                    border: "1px solid rgba(159, 74, 74, 0.18)",
-                    background: "rgba(95, 30, 30, 0.18)",
-                    color: "#e7c9c5",
-                    fontSize: "13px",
-                  }}
-                >
-                  {state.isFinished ? "Session Ended" : `Turn ${state.turnCount}`}
-                </span>
-                {progressInfo && (
-                  <span
-                    style={{
-                      padding: "7px 12px",
-                      borderRadius: "999px",
-                      border: "1px solid rgba(118, 157, 121, 0.22)",
-                      background: "rgba(41, 64, 42, 0.22)",
-                      color: "#d8e8d1",
-                      fontSize: "13px",
-                    }}
-                  >
-                    Progress: {progressInfo.percent}%
-                  </span>
-                )}
-              </div>
+                New run
+              </button>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginBottom: "24px" }}>
-              {state.log.map((msg, index) => {
-                const messageStyle: CSSProperties =
-                  msg.role === "player"
-                    ? {
-                        background:
-                          "linear-gradient(180deg, rgba(44, 58, 76, 0.85) 0%, rgba(31, 40, 52, 0.9) 100%)",
-                        border: "1px solid rgba(96, 134, 178, 0.24)",
-                      }
-                    : msg.role === "npc"
-                    ? {
-                        background:
-                          "linear-gradient(180deg, rgba(63, 46, 63, 0.86) 0%, rgba(42, 31, 42, 0.9) 100%)",
-                        border: "1px solid rgba(163, 122, 174, 0.2)",
-                      }
-                    : {
-                        background:
-                          "linear-gradient(180deg, rgba(40, 33, 28, 0.88) 0%, rgba(23, 19, 17, 0.92) 100%)",
-                        border: "1px solid rgba(182, 154, 110, 0.14)",
-                      };
+            <div
+              style={{
+                marginTop: "18px",
+                padding: "16px",
+                borderRadius: "16px",
+                border: "1px solid rgba(182, 154, 110, 0.14)",
+                background: "rgba(15, 12, 11, 0.7)",
+              }}
+            >
+              <div style={{ fontWeight: 700, color: "#f3ecdc", marginBottom: "6px" }}>{getSceneLabel(state)}</div>
+              <div style={{ color: "#d4c6b1", lineHeight: 1.7 }}>{getObjective(state)}</div>
+            </div>
+
+            <div style={{ marginTop: "18px", display: "grid", gap: "12px" }}>
+              {state.log.map((message, index) => {
+                const imagesHere = imageTimeline.filter((entry) => entry.insertAfter === index);
 
                 return (
-                  <div
-                    key={index}
-                    className="message-enter"
-                    style={{
-                      ...messageStyle,
-                      borderRadius: "16px",
-                      padding: "16px 18px",
-                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <strong
+                  <div key={`log-block-${index}`} style={{ display: "contents" }}>
+                    <div
+                      key={`${message.role}-${index}`}
                       style={{
-                        display: "block",
-                        marginBottom: "8px",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.12em",
-                        fontSize: "12px",
-                        color:
-                          msg.role === "player"
-                            ? "#a8c7ec"
-                            : msg.role === "npc"
-                            ? "#d7b5dc"
-                            : "#cfb788",
+                        padding: "14px 16px",
+                        borderRadius: "16px",
+                        border: "1px solid rgba(182, 154, 110, 0.14)",
+                        background:
+                          message.role === "player"
+                            ? "rgba(45, 34, 24, 0.96)"
+                            : message.role === "system"
+                            ? "rgba(31, 28, 24, 0.96)"
+                            : "rgba(18, 15, 14, 0.96)",
                       }}
                     >
-                      {msg.role}
-                    </strong>
-                    <span style={{ color: "#ece3d4", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>{msg.text}</span>
+                      <div
+                        style={{
+                          marginBottom: "6px",
+                          fontSize: "0.8rem",
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: message.role === "player" ? "#d8ba86" : "#b9a27b",
+                        }}
+                      >
+                        {message.role}
+                      </div>
+                      <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.8, color: "#efe6d7" }}>
+                        {message.text}
+                      </div>
+                    </div>
+
+                    {imagesHere.map((entry) => (
+                      <section key={`${entry.key}-${entry.insertAfter}`} style={{ ...panelStyle, overflow: "hidden" }}>
+                        <div style={{ position: "relative", aspectRatio: "16 / 9", background: "#14100d" }}>
+                          <img
+                            src={entry.src}
+                            alt={entry.alt}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          />
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 );
               })}
+            </div>
 
-              {pendingCheck && (
+            <section style={{ ...panelStyle, padding: "20px", marginTop: "18px" }}>
+              <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Action
+              </div>
+              <div style={{ marginTop: "8px", color: "#d4c6b1", lineHeight: 1.7 }}>
+                Enter what your character does next. Or you can choose from suggested actions after the first response.
+              </div>
+
+              {lastRoll && (
                 <div
-                  className="message-enter"
                   style={{
-                    background:
-                      "linear-gradient(180deg, rgba(40, 33, 28, 0.88) 0%, rgba(23, 19, 17, 0.92) 100%)",
-                    border: "1px solid rgba(182, 154, 110, 0.14)",
-                    borderRadius: "16px",
-                    padding: "16px 18px",
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+                    marginTop: "12px",
+                    padding: "12px 14px",
+                    borderRadius: "14px",
+                    background: "rgba(15, 12, 11, 0.82)",
+                    color: "#efe5d5",
+                    lineHeight: 1.7,
                   }}
                 >
-                  <strong
-                    style={{
-                      display: "block",
-                      marginBottom: "8px",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      fontSize: "12px",
-                      color: "#cfb788",
-                    }}
-                  >
-                    system
-                  </strong>
-
-                  <div style={{ color: "#ece3d4", lineHeight: 1.75 }}>
-                    <p style={{ margin: "0 0 10px" }}>
-                      Check triggered. This action requires a <strong>{pendingCheck.skill}</strong> roll to decide the outcome.
-                    </p>
-                    <p style={{ margin: "0 0 14px", color: "#d8cfbf" }}>
-                      {pendingCheck.reason} · {pendingCheck.expression}
-                    </p>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "16px",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div className={`dice-box ${rolling ? "dice-rolling" : ""}`}>
-                        {displayRollValue ?? "d20"}
-                      </div>
-
-                      <div style={{ minWidth: "250px" }}>
-                        {rolling ? (
-                          <>
-                            <p style={{ margin: "0 0 8px" }}>Rolling the die...</p>
-                            <p style={{ margin: 0, color: "#c9bea8" }}>
-                              The result will be applied automatically after the animation.
-                            </p>
-                          </>
-                        ) : sending ? (
-                          <>
-                            <p style={{ margin: "0 0 8px" }}>
-                              Roll locked: <strong>{pendingCheck.rollResult.raw}</strong>
-                              {pendingCheck.modifier >= 0
-                                ? ` + ${pendingCheck.modifier}`
-                                : ` - ${Math.abs(pendingCheck.modifier)}`} ={" "}
-                              <strong>{pendingCheck.rollResult.total}</strong>
-                            </p>
-                            <p
-                              style={{
-                                margin: 0,
-                                color: "#c9bea8",
-                                display: "flex",
-                                alignItems: "center",
-                                gap: "10px",
-                              }}
-                            >
-                              Applying roll result and generating narration
-                              <span className="thinking-dots" aria-hidden="true">
-                                <span className="thinking-dot" />
-                                <span className="thinking-dot" />
-                                <span className="thinking-dot" />
-                              </span>
-                            </p>
-                          </>
-                        ) : (
-                          <>
-                            <p style={{ margin: "0 0 8px" }}>
-                              Click the die to roll. The game will then resolve the action using that result.
-                            </p>
-                            <button
-                              onClick={rollPendingCheck}
-                              disabled={rolling || sending}
-                              style={{
-                                padding: "11px 16px",
-                                borderRadius: "999px",
-                                border: "1px solid rgba(182, 154, 110, 0.35)",
-                                background: "linear-gradient(180deg, #4a3826 0%, #2d2118 100%)",
-                                color: "#f5ebd6",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Roll d20
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                  Last roll: {lastRoll.raw} {lastRoll.modifier >= 0 ? "+" : "-"} {Math.abs(lastRoll.modifier)} = {lastRoll.total} → {lastRoll.outcome}
                 </div>
               )}
 
-              {sending && pendingPlayerAction && (
-                <>
-                  <div
-                    className="message-enter"
-                    style={{
-                      background:
-                        "linear-gradient(180deg, rgba(44, 58, 76, 0.85) 0%, rgba(31, 40, 52, 0.9) 100%)",
-                      border: "1px solid rgba(96, 134, 178, 0.24)",
-                      borderRadius: "16px",
-                      padding: "16px 18px",
-                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <strong
-                      style={{
-                        display: "block",
-                        marginBottom: "8px",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.12em",
-                        fontSize: "12px",
-                        color: "#a8c7ec",
-                      }}
-                    >
-                      player
-                    </strong>
-                    <span style={{ color: "#ece3d4", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-                      {pendingPlayerAction}
-                    </span>
-                  </div>
-
-                  {!pendingCheck && (
-                    <div
-                      className="message-enter"
-                      style={{
-                        background:
-                          "linear-gradient(180deg, rgba(40, 33, 28, 0.88) 0%, rgba(23, 19, 17, 0.92) 100%)",
-                        border: "1px solid rgba(182, 154, 110, 0.14)",
-                        borderRadius: "16px",
-                        padding: "16px 18px",
-                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <strong
-                        style={{
-                          display: "block",
-                          marginBottom: "8px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.12em",
-                          fontSize: "12px",
-                          color: "#cfb788",
-                        }}
-                      >
-                        narrator
-                      </strong>
-
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#ece3d4" }}>
-                        <span>Message sent. The GM is preparing the next beat</span>
-                        <span className="thinking-dots" aria-hidden="true">
-                          <span className="thinking-dot" />
-                          <span className="thinking-dot" />
-                          <span className="thinking-dot" />
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {state.isFinished ? (
-              <div
-                style={{
-                  marginBottom: "20px",
-                  padding: "18px 18px 20px",
-                  borderRadius: "18px",
-                  background:
-                    "linear-gradient(180deg, rgba(58, 45, 34, 0.94) 0%, rgba(30, 22, 17, 0.96) 100%)",
-                  border: "1px solid rgba(182, 154, 110, 0.2)",
-                }}
-              >
-                <strong style={{ color: "#f3ead8" }}>Session summary</strong>
-                {state.summary ? (
-                  <div style={{ marginTop: "12px", color: "#c9bea8", lineHeight: 1.7 }}>
-                    <h3 style={{ margin: "0 0 8px", color: "#f3ecdc" }}>{state.summary.title}</h3>
-                    <p style={{ margin: "0 0 10px" }}>{state.summary.storySummary}</p>
-                    <ul style={{ margin: 0, paddingLeft: "18px" }}>
-                      {state.summary.keyFindings.map((item, index) => (
-                        <li key={index}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p style={{ margin: "10px 0 0", color: "#c9bea8" }}>No summary available.</p>
-                )}
-                <button
-                  onClick={() => router.push("/create")}
-                  style={{
-                    marginTop: "14px",
-                    padding: "11px 16px",
-                    borderRadius: "999px",
-                    border: "1px solid rgba(182, 154, 110, 0.35)",
-                    background: "linear-gradient(180deg, #3c3023 0%, #241b15 100%)",
-                    color: "#f5ebd6",
-                    cursor: "pointer",
-                  }}
-                >
-                  Start a new game
-                </button>
-              </div>
-            ) : (
-              <>
-                {canEndNow && (
-                  <div
-                    style={{
-                      marginBottom: "16px",
-                      padding: "14px 16px",
-                      borderRadius: "16px",
-                      background: "rgba(53, 41, 24, 0.65)",
-                      border: "1px solid rgba(182, 154, 110, 0.2)",
-                    }}
-                  >
-                    <p style={{ margin: "0 0 10px", color: "#f0e1c2", lineHeight: 1.7 }}>
-                      You already have enough evidence to stop here. You can end the session now, or keep digging for corroborating proof and a fuller final reveal.
-                    </p>
-                    <button
-                      onClick={() => requestAction("End session and compile report")}
-                      disabled={sending || rolling || Boolean(pendingCheck)}
-                      style={{
-                        padding: "11px 16px",
-                        borderRadius: "999px",
-                        border: "1px solid rgba(182, 154, 110, 0.35)",
-                        background: "linear-gradient(180deg, #4a3826 0%, #2d2118 100%)",
-                        color: "#f5ebd6",
-                        cursor: sending || rolling || pendingCheck ? "default" : "pointer",
-                      }}
-                    >
-                      End session now
-                    </button>
-                  </div>
-                )}
-
-                {(sending || rolling) && !pendingCheck && (
-                  <div
-                    style={{
-                      marginBottom: "14px",
-                      padding: "12px 14px",
-                      borderRadius: "14px",
-                      border: "1px solid rgba(182, 154, 110, 0.14)",
-                      background: "rgba(29, 23, 19, 0.92)",
-                      color: "#d8cfbf",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                    }}
-                  >
-                    <span>Your action has been sent. Please wait for the next reply.</span>
-                    <span className="thinking-dots" aria-hidden="true">
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                      <span className="thinking-dot" />
-                    </span>
-                  </div>
-                )}
-
+              {pendingCheck ? (
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto",
-                    gap: "12px",
-                    marginBottom: suggestions.length > 0 ? "18px" : 0,
+                    marginTop: "12px",
+                    padding: "14px",
+                    borderRadius: "18px",
+                    background: "rgba(15, 12, 11, 0.82)",
+                    border: "1px solid rgba(214, 181, 128, 0.16)",
                   }}
                 >
-                  <input
+                  <div style={{ display: "grid", gridTemplateColumns: "minmax(210px, 240px) minmax(0, 1fr)", gap: "16px", alignItems: "center" }}>
+                    <div
+                      style={{
+                        padding: "16px",
+                        borderRadius: "18px",
+                        background: "radial-gradient(circle at top, rgba(214,181,128,0.18), rgba(15,12,11,0) 48%), rgba(12, 10, 9, 0.92)",
+                        border: "1px solid rgba(214, 181, 128, 0.12)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "relative",
+                          height: "176px",
+                          display: "grid",
+                          placeItems: "center",
+                          borderRadius: "18px",
+                          overflow: "hidden",
+                          background: "linear-gradient(180deg, rgba(30,24,20,0.94) 0%, rgba(13,11,10,0.96) 100%)",
+                          boxShadow: dieGlow
+                            ? "0 0 0 1px rgba(230, 206, 162, 0.24) inset, 0 0 30px rgba(214, 181, 128, 0.26)"
+                            : "0 0 0 1px rgba(230, 206, 162, 0.08) inset",
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: "18px",
+                            borderRadius: "16px",
+                            border: "1px solid rgba(214, 181, 128, 0.12)",
+                            opacity: rolling ? 0.9 : 0.5,
+                          }}
+                        />
+                        <div
+                          style={{
+                            position: "absolute",
+                            width: rolling ? "180px" : "120px",
+                            height: "180px",
+                            borderRadius: "999px",
+                            filter: "blur(18px)",
+                            background: dieGlow
+                              ? "rgba(214, 181, 128, 0.30)"
+                              : "rgba(214, 181, 128, 0.10)",
+                            transform: `translateY(${dieTilt.y * 1.6}px)`,
+                            transition: rolling ? "all 70ms linear" : "all 240ms ease",
+                          }}
+                        />
+                        <div
+                          style={{
+                            width: "104px",
+                            height: "104px",
+                            borderRadius: "24px",
+                            display: "grid",
+                            placeItems: "center",
+                            color: "#f7efde",
+                            fontSize: "2.7rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.04em",
+                            border: "1px solid rgba(243, 223, 189, 0.26)",
+                            background: rolling
+                              ? "linear-gradient(180deg, rgba(108,80,48,0.94) 0%, rgba(51,36,24,0.96) 100%)"
+                              : "linear-gradient(180deg, rgba(77,56,35,0.98) 0%, rgba(33,24,18,0.98) 100%)",
+                            boxShadow: dieGlow
+                              ? "0 0 0 1px rgba(255,255,255,0.06) inset, 0 18px 40px rgba(0,0,0,0.36), 0 0 28px rgba(214,181,128,0.24)"
+                              : "0 0 0 1px rgba(255,255,255,0.04) inset, 0 18px 40px rgba(0,0,0,0.34)",
+                            transform: `perspective(900px) rotateX(${dieTilt.rotateX}deg) rotateY(${dieTilt.rotateY}deg) rotateZ(${dieTilt.rotateZ}deg) translateY(${dieTilt.y}px) scale(${dieTilt.scale})`,
+                            transition: rolling
+                              ? "transform 70ms linear, box-shadow 70ms linear, background 70ms linear"
+                              : "transform 260ms ease, box-shadow 260ms ease, background 260ms ease",
+                          }}
+                        >
+                          {displayRollValue ?? "?"}
+                        </div>
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: "14px",
+                            left: 0,
+                            right: 0,
+                            textAlign: "center",
+                            color: "#cdbb9d",
+                            fontSize: "0.86rem",
+                            letterSpacing: "0.08em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {rolling ? "Dice tumbling" : displayRollValue == null ? "Awaiting roll" : getOutcomeLabel(pendingCheck.rollResult.outcome)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{ color: "#f5ebd6", fontWeight: 700, fontSize: "1.04rem" }}>Check ready: {pendingCheck.skill}</div>
+                      <div style={{ marginTop: "6px", color: "#d4c6b1", lineHeight: 1.7 }}>{pendingCheck.reason}</div>
+                      <div style={{ marginTop: "6px", color: "#d4c6b1" }}>{pendingCheck.expression}</div>
+                      <div
+                        style={{
+                          marginTop: "12px",
+                          padding: "10px 12px",
+                          borderRadius: "12px",
+                          background: "rgba(255,255,255,0.03)",
+                          color: "#efe5d5",
+                          lineHeight: 1.7,
+                        }}
+                      >
+                        {rolling
+                          ? "The die is tumbling. Let the result settle before the action resolves."
+                          : displayRollValue == null
+                          ? "Press roll check to animate the die and resolve the action."
+                          : `Final roll: ${pendingCheck.rollResult.raw} ${pendingCheck.rollResult.modifier >= 0 ? "+" : "-"} ${Math.abs(pendingCheck.rollResult.modifier)} = ${pendingCheck.rollResult.total} → ${getOutcomeLabel(pendingCheck.rollResult.outcome)}`}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={rollPendingCheck}
+                        disabled={rolling || sending}
+                        style={{
+                          marginTop: "12px",
+                          padding: "12px 18px",
+                          borderRadius: "999px",
+                          border: "1px solid rgba(214, 181, 128, 0.35)",
+                          background: "linear-gradient(180deg, #4a3826 0%, #2d2118 100%)",
+                          color: "#f5ebd6",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {rolling ? "Rolling..." : "Roll check"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gap: "8px", marginTop: "12px", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                    {suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => requestAction(suggestion)}
+                        disabled={sending || rolling || state.isFinished}
+                        style={{
+                          textAlign: "left",
+                          padding: "11px 12px",
+                          borderRadius: "12px",
+                          border: "1px solid rgba(182, 154, 110, 0.14)",
+                          background: "rgba(15, 12, 11, 0.82)",
+                          color: "#efe5d5",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea
                     value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    onChange={(event) => setInput(event.target.value)}
                     placeholder="Describe your action..."
-                    disabled={sending || rolling || Boolean(pendingCheck)}
+                    disabled={sending || rolling || state.isFinished}
                     style={{
                       width: "100%",
+                      minHeight: "110px",
+                      marginTop: "12px",
                       padding: "14px 16px",
-                      border: "1px solid rgba(182, 154, 110, 0.18)",
                       borderRadius: "14px",
+                      border: "1px solid rgba(182, 154, 110, 0.18)",
                       background: "rgba(15, 12, 11, 0.95)",
                       color: "#f0e7d7",
                       outline: "none",
-                      opacity: sending || rolling || pendingCheck ? 0.7 : 1,
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !sending && !rolling && !pendingCheck) {
-                        requestAction();
-                      }
+                      resize: "vertical",
                     }}
                   />
-                  <button
-                    onClick={() => requestAction()}
-                    disabled={sending || rolling || Boolean(pendingCheck)}
-                    style={{
-                      padding: "14px 18px",
-                      borderRadius: "14px",
-                      border: "1px solid rgba(182, 154, 110, 0.28)",
-                      background:
-                        "linear-gradient(180deg, rgba(72, 57, 40, 1) 0%, rgba(38, 29, 21, 1) 100%)",
-                      color: "#f5ebd6",
-                      cursor: sending || rolling || pendingCheck ? "default" : "pointer",
-                      minWidth: "110px",
-                    }}
-                  >
-                    {pendingCheck ? "Check Ready" : rolling ? "Rolling..." : sending ? "Sending..." : "Send"}
-                  </button>
-                </div>
 
-                {suggestions.length > 0 && (
-                  <div>
-                    <p
+                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "12px" }}>
+                    <button
+                      type="button"
+                      onClick={() => requestAction()}
+                      disabled={sending || rolling || state.isFinished}
                       style={{
-                        margin: "0 0 10px",
-                        color: "#b69a6e",
-                        letterSpacing: "0.14em",
-                        textTransform: "uppercase",
-                        fontSize: "12px",
+                        padding: "13px 18px",
+                        borderRadius: "14px",
+                        border: "1px solid rgba(182, 154, 110, 0.28)",
+                        background: "linear-gradient(180deg, rgba(72, 57, 40, 1) 0%, rgba(38, 29, 21, 1) 100%)",
+                        color: "#f5ebd6",
+                        cursor: "pointer",
+                        minWidth: "110px",
                       }}
                     >
-                      AI Suggested Actions
-                    </p>
-                    <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                      {suggestions.map((item, index) => (
-                        <button
-                          key={`${item}-${index}`}
-                          onClick={() => requestAction(item)}
-                          disabled={sending || rolling || Boolean(pendingCheck)}
-                          style={{
-                            padding: "10px 14px",
-                            borderRadius: "999px",
-                            border: "1px solid rgba(182, 154, 110, 0.18)",
-                            background:
-                              "linear-gradient(180deg, rgba(47, 39, 32, 0.95) 0%, rgba(24, 20, 18, 0.98) 100%)",
-                            color: "#eadfc8",
-                            cursor: sending || rolling || pendingCheck ? "default" : "pointer",
-                            opacity: sending || rolling || pendingCheck ? 0.6 : 1,
-                          }}
-                        >
-                          {item}
-                        </button>
-                      ))}
-                    </div>
+                      {sending ? "Sending..." : "Send"}
+                    </button>
+
+                    {canEndNow && !state.isFinished && (
+                      <button
+                        type="button"
+                        onClick={() => requestAction("End session and compile report")}
+                        disabled={sending || rolling}
+                        style={{
+                          padding: "13px 18px",
+                          borderRadius: "14px",
+                          border: "1px solid rgba(182, 154, 110, 0.28)",
+                          background: "rgba(15, 12, 11, 0.84)",
+                          color: "#f5ebd6",
+                          cursor: "pointer",
+                        }}
+                      >
+                        End session now
+                      </button>
+                    )}
                   </div>
-                )}
-              </>
+                </>
+              )}
+            </section>
+
+            {state.isFinished && state.summary && (
+              <div
+                style={{
+                  marginTop: "18px",
+                  padding: "18px",
+                  borderRadius: "18px",
+                  border: "1px solid rgba(214, 181, 128, 0.22)",
+                  background: "rgba(15, 12, 11, 0.84)",
+                }}
+              >
+                <div style={{ color: "#b9a27b", letterSpacing: "0.12em", textTransform: "uppercase", fontSize: "0.8rem" }}>
+                  Session Report
+                </div>
+                <h2 style={{ margin: "10px 0 12px", color: "#f5ebd6" }}>{state.summary.title}</h2>
+                <p style={{ lineHeight: 1.8, color: "#e6dccb" }}>{state.summary.storySummary}</p>
+                <ul style={{ marginTop: "12px", paddingLeft: "18px", color: "#e0d4c0", lineHeight: 1.8 }}>
+                  {state.summary.keyFindings.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              </div>
             )}
           </section>
 
-          <div
+          <aside
             style={{
-              position: "sticky",
-              top: "24px",
-              alignSelf: "start",
-              display: "flex",
-              flexDirection: "column",
+              display: "grid",
               gap: "18px",
+              alignContent: "start",
+              alignSelf: "start",
+              position: "sticky",
+              top: "20px",
+              maxHeight: "calc(100vh - 40px)",
+              overflowY: "auto",
+              paddingRight: "4px",
             }}
           >
-            {progressInfo && (
-              <section style={{ ...panelStyle, padding: "18px 20px" }}>
-                <p
-                  style={{
-                    margin: "0 0 8px",
-                    color: "#b69a6e",
-                    letterSpacing: "0.18em",
-                    textTransform: "uppercase",
-                    fontSize: "12px",
-                  }}
-                >
-                  Case Progress
-                </p>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "baseline",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <strong style={{ color: "#f3ecdc", fontSize: "20px" }}>{progressInfo.percent}%</strong>
-                  <span style={{ color: "#d7c8ad", fontSize: "13px" }}>{progressInfo.label}</span>
+            <section style={{ ...panelStyle, padding: "18px" }}>
+              <div style={{ display: "grid", gap: "10px" }}>
+                <div>
+                  <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                    Progress
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: "8px", color: "#f5ebd6" }}>
+                    <strong>{progressInfo?.label}</strong>
+                    <span>{progressInfo?.percent}%</span>
+                  </div>
+                  <div style={{ marginTop: "10px", height: "10px", borderRadius: "999px", background: "rgba(255,255,255,0.08)" }}>
+                    <div
+                      style={{
+                        width: `${progressInfo?.percent || 0}%`,
+                        height: "100%",
+                        borderRadius: "999px",
+                        background: "linear-gradient(90deg, rgba(214,181,128,0.8), rgba(120,89,52,0.9))",
+                      }}
+                    />
+                  </div>
+                  <div style={{ marginTop: "10px", color: "#d4c6b1", lineHeight: 1.7 }}>{progressInfo?.detail}</div>
+                  <div style={{ marginTop: "8px", color: "#c3b49e" }}>Estimated remaining: {progressInfo?.eta}</div>
                 </div>
-                <div
-                  style={{
-                    height: "10px",
-                    borderRadius: "999px",
-                    background: "rgba(255,255,255,0.06)",
-                    overflow: "hidden",
-                    marginBottom: "10px",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${progressInfo.percent}%`,
-                      height: "100%",
-                      background: "linear-gradient(90deg, #5c734c 0%, #9bb57a 100%)",
-                    }}
-                  />
-                </div>
-                <p style={{ margin: "0 0 8px", color: "#ece3d4", lineHeight: 1.7 }}>
-                  {progressInfo.detail}
-                </p>
-                <p style={{ margin: 0, color: "#c9bea8", fontSize: "13px" }}>
-                  Expected run length: 12-18 actions. Remaining: {progressInfo.eta}
-                </p>
-              </section>
-            )}
 
-            <section style={{ ...panelStyle, padding: "18px 20px" }}>
-              <p
-                style={{
-                  margin: "0 0 8px",
-                  color: "#b69a6e",
-                  letterSpacing: "0.18em",
-                  textTransform: "uppercase",
-                  fontSize: "12px",
-                }}
-              >
-                Current Objective
-              </p>
-              <p style={{ margin: 0, color: "#ece3d4", lineHeight: 1.7 }}>{getObjective(state.currentScene)}</p>
+                <div>
+                  <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                    Danger
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginTop: "8px", color: "#f5ebd6" }}>
+                    <strong>{safeDanger}</strong>
+                    <span>{safeDanger}/{safeMaxDanger}</span>
+                  </div>
+                  <div style={{ marginTop: "10px", height: "10px", borderRadius: "999px", background: "rgba(255,255,255,0.08)" }}>
+                    <div
+                      style={{
+                        width: `${dangerPercent}%`,
+                        height: "100%",
+                        borderRadius: "999px",
+                        background: "linear-gradient(90deg, rgba(168,78,55,0.88), rgba(112,30,18,0.96))",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "10px" }}>
+                  <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(15, 12, 11, 0.82)" }}>
+                    <div style={{ color: "#b9a27b", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>HP</div>
+                    <div style={{ marginTop: "6px", fontSize: "1.35rem", color: "#f5ebd6" }}>{state.character.hp}</div>
+                  </div>
+                  <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(15, 12, 11, 0.82)" }}>
+                    <div style={{ color: "#b9a27b", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>Turns</div>
+                    <div style={{ marginTop: "6px", fontSize: "1.35rem", color: "#f5ebd6" }}>{state.turnCount}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px" }}>
+                  <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(15, 12, 11, 0.82)" }}>
+                    <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>Observation</div>
+                    <div style={{ marginTop: "6px", fontSize: "1.15rem", color: "#f5ebd6" }}>+{state.character.observation}</div>
+                  </div>
+                  <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(15, 12, 11, 0.82)" }}>
+                    <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>Persuasion</div>
+                    <div style={{ marginTop: "6px", fontSize: "1.15rem", color: "#f5ebd6" }}>+{state.character.persuasion}</div>
+                  </div>
+                  <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(15, 12, 11, 0.82)" }}>
+                    <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>Willpower</div>
+                    <div style={{ marginTop: "6px", fontSize: "1.15rem", color: "#f5ebd6" }}>+{state.character.willpower}</div>
+                  </div>
+                </div>
+              </div>
             </section>
 
-            <aside style={{ ...panelStyle, padding: "22px" }}>
-              <p
-                style={{
-                  margin: "0 0 10px",
-                  color: "#b69a6e",
-                  letterSpacing: "0.18em",
-                  textTransform: "uppercase",
-                  fontSize: "12px",
-                }}
-              >
-                Status Panel
-              </p>
-              <h2 style={{ margin: "0 0 16px", color: "#f3ecdc" }}>Current State</h2>
-
-              <div
-                style={{
-                  marginBottom: "16px",
-                  padding: "14px 16px",
-                  borderRadius: "16px",
-                  background: "rgba(18, 14, 12, 0.92)",
-                  border: "1px solid rgba(182, 154, 110, 0.12)",
-                }}
-              >
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Danger:</strong> {safeDanger}/{safeMaxDanger} ({dangerPercent}%)
-                </p>
+            <section style={{ ...panelStyle, padding: "18px" }}>
+              <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Dice flow
+              </div>
+              <div style={{ display: "grid", gap: "10px", marginTop: "12px" }}>
                 <div
                   style={{
-                    height: "10px",
-                    borderRadius: "999px",
-                    background: "rgba(255,255,255,0.06)",
-                    overflow: "hidden",
+                    padding: "12px",
+                    borderRadius: "14px",
+                    background: "rgba(15, 12, 11, 0.82)",
+                    color: "#e9decc",
+                    lineHeight: 1.7,
                   }}
                 >
+                  <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "6px" }}>
+                    Skill bases
+                  </div>
+                  Observation +{state.character.observation} · Persuasion +{state.character.persuasion} · Willpower +{state.character.willpower}
+                </div>
+
+                {pendingCheck ? (
                   <div
                     style={{
-                      width: `${dangerPercent}%`,
-                      height: "100%",
-                      background:
-                        dangerPercent < 50
-                          ? "linear-gradient(90deg, #69573a 0%, #9b7a46 100%)"
-                          : "linear-gradient(90deg, #7b3f35 0%, #b64c43 100%)",
+                      padding: "12px",
+                      borderRadius: "14px",
+                      background: "rgba(15, 12, 11, 0.82)",
+                      color: "#efe5d5",
+                      lineHeight: 1.7,
                     }}
-                  />
-                </div>
-                <p style={{ margin: "10px 0 0", color: "#c9bea8", lineHeight: 1.6 }}>
-                  This bar is normalized from the current saved state, so old sessions with invalid danger values are clamped automatically.
-                </p>
-              </div>
-
-              <div
-                style={{
-                  padding: "14px 16px",
-                  borderRadius: "16px",
-                  background: "rgba(18, 14, 12, 0.92)",
-                  border: "1px solid rgba(182, 154, 110, 0.12)",
-                }}
-              >
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Name:</strong> {state.character.name}
-                </p>
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Role:</strong> {state.character.role}
-                </p>
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>HP:</strong> {state.character.hp}
-                </p>
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Observation:</strong> {state.character.observation}
-                </p>
-                <p style={{ margin: "0 0 8px", color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Persuasion:</strong> {state.character.persuasion}
-                </p>
-                <p style={{ margin: 0, color: "#ece3d4" }}>
-                  <strong style={{ color: "#f1e7d2" }}>Willpower:</strong> {state.character.willpower}
-                </p>
-              </div>
-
-              <div style={{ marginTop: "18px" }}>
-                <h3 style={{ margin: "0 0 10px", color: "#eadfc8" }}>Inventory</h3>
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: "16px",
-                    background: "rgba(18, 14, 12, 0.92)",
-                    border: "1px solid rgba(182, 154, 110, 0.12)",
-                  }}
-                >
-                  <ul style={{ paddingLeft: "18px", margin: 0, color: "#d9ceba", lineHeight: 1.8 }}>
-                    {state.character.inventory.map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              <div style={{ marginTop: "18px" }}>
-                <h3 style={{ margin: "0 0 10px", color: "#eadfc8" }}>Unlocked Clues</h3>
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: "16px",
-                    background: "rgba(18, 14, 12, 0.92)",
-                    border: "1px solid rgba(182, 154, 110, 0.12)",
-                  }}
-                >
-                  {unlockedFlags.length > 0 ? (
-                    <ul style={{ paddingLeft: "18px", margin: 0, color: "#d9ceba", lineHeight: 1.8 }}>
-                      {unlockedFlags.map((key) => (
-                        <li key={key}>{formatFlagLabel(key)}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p style={{ margin: 0, color: "#c0b4a2" }}>No major clues yet.</p>
-                  )}
-                </div>
-              </div>
-
-              <div style={{ marginTop: "18px" }}>
-                <h3 style={{ margin: "0 0 10px", color: "#eadfc8" }}>Last Roll</h3>
-                <div
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: "16px",
-                    background: "rgba(18, 14, 12, 0.92)",
-                    border: "1px solid rgba(182, 154, 110, 0.12)",
-                  }}
-                >
-                  {lastRoll ? (
-                    <div style={{ color: "#d9ceba", lineHeight: 1.8 }}>
-                      <p style={{ margin: 0 }}>
-                        <strong>Expression:</strong> {lastRoll.expression}
-                      </p>
-                      <p style={{ margin: 0 }}>
-                        <strong>Raw:</strong> {lastRoll.raw}
-                      </p>
-                      <p style={{ margin: 0 }}>
-                        <strong>Modifier:</strong> {lastRoll.modifier >= 0 ? `+${lastRoll.modifier}` : lastRoll.modifier}
-                      </p>
-                      <p style={{ margin: 0 }}>
-                        <strong>Total:</strong> {lastRoll.total}
-                      </p>
-                      <p style={{ margin: 0 }}>
-                        <strong>Outcome:</strong> {lastRoll.outcome}
-                      </p>
+                  >
+                    <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "6px" }}>
+                      Current check
                     </div>
-                  ) : (
-                    <p style={{ margin: 0, color: "#c0b4a2" }}>No dice roll yet.</p>
-                  )}
-                </div>
+                    <div><strong>{pendingCheck.skill}</strong> · {pendingCheck.reason}</div>
+                    <div style={{ marginTop: "6px", color: "#d7c8b2" }}>Formula: {pendingCheck.expression}</div>
+                    <div style={{ marginTop: "6px", color: "#c3b49e" }}>This resolves after the visible dice animation.</div>
+                  </div>
+                ) : lastRoll ? (
+                  <div
+                    style={{
+                      padding: "12px",
+                      borderRadius: "14px",
+                      background: "rgba(15, 12, 11, 0.82)",
+                      color: "#efe5d5",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    <div style={{ color: "#b9a27b", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: "6px" }}>
+                      Latest result
+                    </div>
+                    <div>Formula: {lastRoll.expression}</div>
+                    <div>Roll: {lastRoll.raw}</div>
+                    <div>Modifier: {lastRoll.modifier >= 0 ? "+" : "-"}{Math.abs(lastRoll.modifier)}</div>
+                    <div>Total: {lastRoll.total}</div>
+                    <div>Outcome: {getOutcomeLabel(lastRoll.outcome)}</div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: "12px",
+                      borderRadius: "14px",
+                      background: "rgba(15, 12, 11, 0.82)",
+                      color: "#d4c6b1",
+                      lineHeight: 1.7,
+                    }}
+                  >
+                    No roll yet. When a check is triggered, the formula and result will stay here.
+                  </div>
+                )}
               </div>
-            </aside>
-          </div>
+            </section>
+
+            <section style={{ ...panelStyle, padding: "18px" }}>
+              <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Inventory
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+                {state.character.inventory.length ? (
+                  state.character.inventory.map((item) => (
+                    <span
+                      key={item}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "999px",
+                        background: "rgba(15, 12, 11, 0.86)",
+                        border: "1px solid rgba(182, 154, 110, 0.16)",
+                        color: "#efe5d5",
+                        fontSize: "0.92rem",
+                      }}
+                    >
+                      {item}
+                    </span>
+                  ))
+                ) : (
+                  <div style={{ color: "#d4c6b1", marginTop: "10px" }}>No items yet.</div>
+                )}
+              </div>
+            </section>
+
+            <section style={{ ...panelStyle, padding: "18px" }}>
+              <div style={{ color: "#b9a27b", fontSize: "0.82rem", textTransform: "uppercase", letterSpacing: "0.12em" }}>
+                Unlocked findings
+              </div>
+              <div style={{ display: "grid", gap: "8px", marginTop: "12px" }}>
+                {unlockedFlags.length ? (
+                  unlockedFlags.map((flag) => (
+                    <div
+                      key={flag}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: "12px",
+                        background: "rgba(15, 12, 11, 0.82)",
+                        color: "#efe5d5",
+                      }}
+                    >
+                      {formatFlagLabel(flag)}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ color: "#d4c6b1" }}>No major findings yet.</div>
+                )}
+              </div>
+            </section>
+
+          </aside>
         </div>
       </div>
     </main>
